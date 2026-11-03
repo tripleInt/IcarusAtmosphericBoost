@@ -22,9 +22,7 @@ internal static class Program
 
             string gameDirectory = args.Length > 0 ? args[0]
                 : @"C:\Program Files (x86)\Steam\steamapps\common\Dyson Sphere Program";
-            string bepDirectory = args.Length > 1 ? args[1] : Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                @"r2modmanPlus-local\DysonSphereProgram\profiles\ue-test\BepInEx");
+            string bepDirectory = args.Length > 1 ? args[1] : Path.Combine(gameDirectory, "BepInEx");
             string modPath = args.Length > 2 ? args[2]
                 : Path.Combine(FindProjectDirectory(), @"dist\IcarusAtmosphericBoost.dll");
             string gameManaged = Path.Combine(gameDirectory, @"DSPGAME_Data\Managed");

@@ -1,6 +1,6 @@
 # Icarus Atmospheric Boost / 伊卡洛斯大气弹射
 
-用于《戴森球计划》的 BepInEx 5 + Harmony mod。全部开发文件位于 `DSPDev/IcarusAtmosphericBoost`，不修改游戏源码。
+用于《戴森球计划》的 BepInEx 5 + Harmony mod。
 
 ## 使用
 
@@ -16,7 +16,7 @@
 ## 安装
 
 1. 游戏或所用 mod 管理器配置中需已安装 **BepInEx 5**（可使用 DSP 的 `xiaoye97-BepInEx` 包）。
-2. 关闭游戏，将 `dist/IcarusAtmosphericBoost.dll` 复制到该配置的 `BepInEx/plugins/IcarusAtmosphericBoost/` 中。
+2. 从 [GitHub Releases](https://github.com/tripleInt/IcarusAtmosphericBoost/releases) 下载 ZIP。关闭游戏，将包内的 DLL 放到该配置的 `BepInEx/plugins/IcarusAtmosphericBoost/` 中。
 3. 用该 BepInEx 配置启动游戏。日志应出现 `Icarus Atmospheric Boost 1.1.0 loaded`。
 
 使用 r2modman 时请复制到实际启动的 profile 的 `BepInEx/plugins`，不一定是游戏安装目录。
@@ -37,28 +37,22 @@
 
 构建 SDK 为 **.NET 10**；插件运行目标为游戏 Unity/Mono 支持的 **.NET Framework 4.7.2**。
 
-在项目目录运行：
+在仓库根目录运行。将变量设为自己的游戏安装目录和含有 `core` 子目录的 BepInEx 目录。
 
 ```powershell
-.\build.ps1
+.\build.ps1 -GameDirectory $GameDirectory -BepInExDirectory $BepInExDirectory
 ```
 
-脚本默认读取本机 Steam 安装中的游戏程序集，以及 `r2modmanPlus-local/DysonSphereProgram/profiles/ue-test/BepInEx/core` 中的 BepInEx/Harmony。不同位置可覆盖：
-
-```powershell
-.\build.ps1 -GameDirectory 'D:\Games\Dyson Sphere Program' -BepInExDirectory 'D:\Mods\MyProfile\BepInEx'
-```
-
-需要本地 .NET Framework 4.7.2 引用程序集（本机已存在）。不重编译反编译出的 `Assembly-CSharp`，也不将游戏或 BepInEx 依赖打包到产物中。构建后 DLL、调试符号和本说明位于 `dist/`，不会自动部署到游戏。构建缓存与临时目录位于 `DSPDev` 下。
+构建需要 .NET Framework 4.7.2 引用程序集。DLL 和 Thunderstore ZIP 输出到仓库的 `dist/` 目录。
 
 ## 验证范围
 
-已完成本机游戏程序集编译、输入计时和球面速度约束的独立回归检查，以及 39 项 Harmony/BepInEx 静态兼容性检查。测试不需要启动游戏：
+已通过编译、输入计时与球面速度约束的回归检查，以及 39 项 Harmony/BepInEx 静态兼容性检查。
 
 ```powershell
 dotnet run --project .\tests\RegressionChecks.csproj --configuration Release
 dotnet build .\tests\CompatibilityCheck\CompatibilityCheck.csproj --configuration Release
-.\tests\CompatibilityCheck\bin\Release\net472\CompatibilityCheck.exe
+.\tests\CompatibilityCheck\bin\Release\net472\CompatibilityCheck.exe $GameDirectory $BepInExDirectory
 ```
 
 回归检查包括：短按/长按/松键、计时重置、不同更新间隔、单次触发、下坠中触发、松键惯性、极大切向速度、球面边界和解锁后的离星速度。

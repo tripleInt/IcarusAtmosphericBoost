@@ -9,11 +9,12 @@
     <LangVersion>latest</LangVersion>
     <PlatformTarget>x64</PlatformTarget>
     <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/IcarusAtmosphericBoost</PathMap>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
     <RestorePackagesPath>$(MSBuildThisFileDirectory)..\.nuget\packages</RestorePackagesPath>
     <GameDirectory Condition="'$(GameDirectory)' == ''">$(MSBuildProgramFiles32)\Steam\steamapps\common\Dyson Sphere Program</GameDirectory>
-    <BepInExDirectory Condition="'$(BepInExDirectory)' == ''">$(APPDATA)\r2modmanPlus-local\DysonSphereProgram\profiles\ue-test\BepInEx</BepInExDirectory>
+    <BepInExDirectory Condition="'$(BepInExDirectory)' == ''">$(GameDirectory)\BepInEx</BepInExDirectory>
     <GameManagedDirectory>$(GameDirectory)\DSPGAME_Data\Managed</GameManagedDirectory>
   </PropertyGroup>
 

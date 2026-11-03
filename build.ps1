@@ -2,8 +2,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
-    [string] $GameDirectory = 'C:\Program Files (x86)\Steam\steamapps\common\Dyson Sphere Program',
-    [string] $BepInExDirectory = "$env:APPDATA\r2modmanPlus-local\DysonSphereProgram\profiles\ue-test\BepInEx"
+    [string] $GameDirectory = "${env:ProgramFiles(x86)}\Steam\steamapps\common\Dyson Sphere Program",
+    [string] $BepInExDirectory = (Join-Path $GameDirectory 'BepInEx')
 )
 
 Set-StrictMode -Version Latest
