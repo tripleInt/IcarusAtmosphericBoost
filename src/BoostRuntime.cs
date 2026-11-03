@@ -183,7 +183,7 @@ namespace IcarusAtmosphericBoost
 
             if (unlocked && (launched || outwardBeforeActions > 0f))
             {
-                // Carry the impulse through the near-ground approach to Sail.
+                // Carry the impulse through the initial ballistic ascent.
                 // Use the live Rigidbody velocity before vanilla's 50 m/s Fly cap.
                 float radial = Vector3.Dot(velocity, up);
                 if (!launched && radial < outwardBeforeActions)
@@ -192,12 +192,6 @@ namespace IcarusAtmosphericBoost
                 c.velocity = velocity;
                 if (launched)
                     PlayIgnition(c);
-                float safeAltitude = trackedPlanet.type == EPlanetType.Gas ? 49f : 8f;
-                if (radius - trackedPlanet.realRadius >= safeAltitude || c.movementStateInFrame == EMovementState.Sail)
-                {
-                    EnterSail(c);
-                    ascentUntil = 0.0;
-                }
                 return;
             }
 
@@ -260,23 +254,6 @@ namespace IcarusAtmosphericBoost
                 if (thruster != null && thruster.gameObject.activeInHierarchy)
                     thruster.Emit(12);
             }
-        }
-
-        private static void EnterSail(PlayerController c)
-        {
-            if (c.movementStateInFrame != EMovementState.Sail)
-            {
-                if (c.cmd.type == ECommand.Build)
-                {
-                    c.cmd.SetNoneCommand();
-                    c.actionBuild.blueprintMode = EBlueprintMode.None;
-                }
-                c.movementStateInFrame = EMovementState.Sail;
-                c.actionSail.ResetSailState();
-                GameCamera.instance?.SyncForSailMode();
-                GameMain.gameScenario?.NotifyOnSailModeEnter();
-            }
-            BeginSailCoast(c.actionSail);
         }
 
         private static void BeginSailCoast(PlayerMove_Sail sail)
