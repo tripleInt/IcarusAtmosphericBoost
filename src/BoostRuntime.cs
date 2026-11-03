@@ -100,6 +100,19 @@ namespace IcarusAtmosphericBoost
                 outwardBeforeActions = Vector3.Dot(c.velocity, c.player.position.normalized);
         }
 
+        internal static void SeparateChargeFromClimb(PlayerController c)
+        {
+            if (CanModify(c) && CanReadJump(c) && !c.player.warping
+                && VFInput._jump.pressing && InLaunchRange(c) && c.input1.y > 0f)
+                c.input1.y = 0f;
+        }
+
+        internal static void PreserveTakeoffCoast(PlayerController c, ref float force)
+        {
+            if (CanModify(c) && c.mecha.thrusterLevel >= 2 && outwardBeforeActions > 0f)
+                force = 0f;
+        }
+
         private static Vector3 LimitVelocity(Vector3 position, Vector3 velocity, float ceiling, float dt)
         {
             float radius = position.magnitude;
@@ -124,8 +137,10 @@ namespace IcarusAtmosphericBoost
                 return false;
             if (energy <= 0.0)
                 return true;
+            double reserve = mecha.coreEnergyCap * 0.05;
+            energy = Math.Min(energy, reserve);
             mecha.QueryEnergy(energy, out double available, out _);
-            if (available < energy)
+            if (available < energy || mecha.coreEnergy - energy < reserve)
                 return false;
             mecha.UseEnergy(energy);
             mecha.MarkEnergyChange(4, -energy); // Vanilla flight consumption category.
@@ -230,6 +245,7 @@ namespace IcarusAtmosphericBoost
             VectorLF3 carrier = trackedPlanet.GetUniversalVelocityAtLocalPoint(GameMain.gameTime, local);
             double radial = VectorLF3.Dot(c.player.uVelocity - carrier, up);
             c.player.uVelocity += up * (Plugin.LaunchSpeed.Value - radial);
+            BeginSailCoast(c.actionSail);
             Gesture.RecordLaunch(Time.realtimeSinceStartupAsDouble);
             PlayIgnition(c);
         }
@@ -260,6 +276,15 @@ namespace IcarusAtmosphericBoost
                 GameCamera.instance?.SyncForSailMode();
                 GameMain.gameScenario?.NotifyOnSailModeEnter();
             }
+            BeginSailCoast(c.actionSail);
+        }
+
+        private static void BeginSailCoast(PlayerMove_Sail sail)
+        {
+            // Vanilla reduces orbital correction and gravity compensation after manual input.
+            // Let the same timers decay normally so the launch keeps its radial momentum.
+            sail.input_aff_1 = 1.0;
+            sail.input_aff_2 = 1.0;
         }
     }
 }

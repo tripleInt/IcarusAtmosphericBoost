@@ -43,7 +43,9 @@ internal static class Program
                 { "PlayerController.ApplyLocalForce", new string[0] },
                 { "PlayerController.UpdatePhysicsDirect", new string[0] },
                 { "PlayerController.Free", new string[0] },
-                { "PlayerMove_Sail.GameTick", new[] { "System.Int64" } }
+                { "PlayerMove_Sail.GameTick", new[] { "System.Int64" } },
+                { "PlayerController.GetInput", new string[0] },
+                { "PlayerMove_Fly.UseThrustEnergy", new[] { "System.Single&", "System.Single", "System.Double" } }
             };
             var methods = new Dictionary<string, MethodInfo>();
             foreach (var target in expectedTargets)
@@ -75,9 +77,10 @@ internal static class Program
                     Require(methods.ContainsKey(targetKey), "Harmony target exists in inspected game: " + targetKey);
                     Require(declaredTargets.Add(targetKey), "No duplicate Harmony target: " + targetKey);
                     MethodInfo[] prefixes = patchType.GetMethods(DeclaredStatic).Where(m =>
-                        CustomAttributeData.GetCustomAttributes(m).Any(a => a.AttributeType.FullName == "HarmonyLib.HarmonyPrefix")).ToArray();
+                        CustomAttributeData.GetCustomAttributes(m).Any(a => a.AttributeType.FullName == "HarmonyLib.HarmonyPrefix"
+                            || a.AttributeType.FullName == "HarmonyLib.HarmonyPostfix")).ToArray();
                     Require(prefixes.Length == 1 && prefixes[0].ReturnType.FullName == "System.Void",
-                        "Harmony prefix signature: " + patchType.FullName);
+                        "Harmony patch signature: " + patchType.FullName);
 
                     foreach (ParameterInfo parameter in prefixes[0].GetParameters())
                     {
@@ -95,7 +98,9 @@ internal static class Program
                                 "Harmony field injection: " + patchType.Name + "." + parameter.Name);
                         }
                         else
-                            throw new InvalidOperationException("Unverified Harmony injection: " + patchType.FullName + "." + parameter.Name);
+                            Require(methods[targetKey].GetParameters().Any(p => p.Name == parameter.Name
+                                && p.ParameterType.FullName == parameter.ParameterType.FullName),
+                                "Harmony method parameter injection: " + patchType.Name + "." + parameter.Name);
                     }
                 }
             }
@@ -107,7 +112,7 @@ internal static class Program
             Require(pluginAttributes.Any(a => a.AttributeType.FullName == "BepInEx.BepInPlugin"
                 && a.ConstructorArguments.Count == 3
                 && (string)a.ConstructorArguments[0].Value == "local.dsp.icarusatmosphericboost"
-                && (string)a.ConstructorArguments[2].Value == "2.1.0"), "BepInEx plugin identity and version metadata");
+                && (string)a.ConstructorArguments[2].Value == "2.1.1"), "BepInEx plugin identity and version metadata");
             Require(pluginAttributes.Any(a => a.AttributeType.FullName == "BepInEx.BepInProcess"
                 && a.ConstructorArguments.Count == 1
                 && (string)a.ConstructorArguments[0].Value == "DSPGAME.exe"), "BepInEx process filter is DSPGAME.exe");

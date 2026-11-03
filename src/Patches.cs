@@ -12,6 +12,23 @@ namespace IcarusAtmosphericBoost
         }
     }
 
+    [HarmonyPatch(typeof(PlayerController), "GetInput")]
+    internal static class ChargeInputPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(PlayerController __instance) { BoostRuntime.SeparateChargeFromClimb(__instance); }
+    }
+
+    [HarmonyPatch(typeof(PlayerMove_Fly), nameof(PlayerMove_Fly.UseThrustEnergy))]
+    internal static class TakeoffThrustPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(PlayerMove_Fly __instance, ref float force)
+        {
+            BoostRuntime.PreserveTakeoffCoast(__instance.controller, ref force);
+        }
+    }
+
     [HarmonyPatch(typeof(PlayerMove_Sail), nameof(PlayerMove_Sail.GameTick))]
     internal static class SailPatch
     {

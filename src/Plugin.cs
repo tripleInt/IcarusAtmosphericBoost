@@ -11,7 +11,7 @@ namespace IcarusAtmosphericBoost
     {
         public const string PluginGuid = "local.dsp.icarusatmosphericboost";
         public const string PluginName = "Icarus Atmospheric Boost";
-        public const string PluginVersion = "2.1.0";
+        public const string PluginVersion = "2.1.1";
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<float> HoldSeconds;
