@@ -1,0 +1,9 @@
+{
+  "name": "IcarusAtmosphericBoost",
+  "version_number": "1.1.0",
+  "website_url": "https://github.com/tripleInt/IcarusAtmosphericBoost",
+  "description": "Hold jump for a single upward launch, with configurable hold time and energy cost. Research gates atmospheric escape.",
+  "dependencies": [
+    "xiaoye97-BepInEx-5.4.17"
+  ]
+}

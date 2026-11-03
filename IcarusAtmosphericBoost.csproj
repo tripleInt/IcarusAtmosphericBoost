@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- The game runs on Unity/Mono; .NET 10 is the build SDK, not the game runtime. -->
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>IcarusAtmosphericBoost</AssemblyName>
+    <RootNamespace>IcarusAtmosphericBoost</RootNamespace>
+    <Version>1.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <Deterministic>true</Deterministic>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <RestorePackagesPath>$(MSBuildThisFileDirectory)..\.nuget\packages</RestorePackagesPath>
+    <GameDirectory Condition="'$(GameDirectory)' == ''">$(MSBuildProgramFiles32)\Steam\steamapps\common\Dyson Sphere Program</GameDirectory>
+    <BepInExDirectory Condition="'$(BepInExDirectory)' == ''">$(APPDATA)\r2modmanPlus-local\DysonSphereProgram\profiles\ue-test\BepInEx</BepInExDirectory>
+    <GameManagedDirectory>$(GameDirectory)\DSPGAME_Data\Managed</GameManagedDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedDirectory)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExDirectory)\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExDirectory)\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <RequiredAssembly Include="@(Reference->'%(HintPath)')" />
+  </ItemGroup>
+
+  <Target Name="ValidateLocalDependencies" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('%(RequiredAssembly.Identity)')"
+           Text="Missing dependency: %(RequiredAssembly.Identity). Set GameDirectory and BepInExDirectory to your game install and the BepInEx folder, e.g. dotnet build -p:GameDirectory=&quot;C:\Games\Dyson Sphere Program&quot; -p:BepInExDirectory=&quot;C:\Mods\BepInEx&quot;." />
+  </Target>
+</Project>

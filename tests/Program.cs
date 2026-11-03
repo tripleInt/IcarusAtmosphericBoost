@@ -1,0 +1,172 @@
+using IcarusAtmosphericBoost;
+
+// Deliberately links only the production scalar rules. These checks cannot replace
+// a play test of Harmony hooks, Unity physics, camera transitions, or input focus.
+int assertions = 0;
+int simulations = 0;
+const double tolerance = 1e-8;
+
+void Check(bool condition, string reason)
+{
+    assertions++;
+    if (!condition)
+        throw new InvalidOperationException(reason);
+}
+
+void Near(double actual, double expected, string reason)
+{
+    Check(double.IsFinite(actual) && Math.Abs(actual - expected) <= tolerance * Math.Max(1, Math.Abs(expected)),
+        $"{reason}: expected {expected:R}, got {actual:R}");
+}
+
+void TestHoldGesture()
+{
+    const double delay = 0.5;
+    var hold = new HoldGesture();
+    Check(!hold.Sample(true, 10, delay), "A new press must wait for the hold delay.");
+    Check(!hold.Sample(true, 10.49, delay), "A short press must not trigger.");
+    Check(hold.Sample(true, 10.5, delay), "Holding through the threshold must trigger.");
+    hold.Consume();
+    Check(!hold.Sample(true, 11, delay), "Holding after a launch must not launch again.");
+    Check(!hold.Sample(true, 120, delay), "Even a very long hold cannot repeat the launch.");
+    Check(!hold.Sample(false, 11.1, delay), "Release must rearm the gesture.");
+    Check(!hold.Sample(true, 11.2, delay), "A second press must start a new hold.");
+    Check(!hold.Sample(false, 11.69, delay), "Releasing just before the delay must cancel.");
+    Check(!hold.Sample(true, 11.7, delay), "Separate short presses must not accumulate.");
+
+    // The runtime passes pressed=false when input is blocked by a menu or focus.
+    Check(!hold.Sample(false, 12, delay), "Blocked input must reset the pending hold.");
+    Check(!hold.Sample(true, 20, delay), "Returning from blocked input must wait again.");
+    Check(!hold.Sample(true, 20.49, delay), "Time spent blocked must not count as hold time.");
+    Check(hold.Sample(true, 20.5, delay), "A complete hold after blocking must trigger.");
+    hold.Reset();
+    Check(!hold.Sample(true, 20.6, delay), "An explicit lifecycle reset must clear activation.");
+    Check(!hold.Sample(true, 19, delay), "A clock earlier than press start must restart timing.");
+    Check(!hold.Sample(true, 19.49, delay), "Clock rollback must not leave the gesture active.");
+    Check(hold.Sample(true, 19.5, delay), "Timing must recover after a clock rollback.");
+}
+
+void TestLaunchSpeed()
+{
+    Near(BoostMath.LaunchSpeed(80, 201, 255, false), 80, "Low-altitude launch uses the configured speed");
+    Near(BoostMath.LaunchSpeed(80, 245, 255, false), 40, "Locked boost brakes with remaining altitude");
+    Near(BoostMath.LaunchSpeed(80, 254.75, 255, false), 1, "Locked boost slows near the ceiling");
+    Near(BoostMath.LaunchSpeed(80, 255, 255, false), 0, "The ceiling permits no outward boost");
+    Near(BoostMath.LaunchSpeed(80, 256, 255, false), 0, "Being above the ceiling must not create negative launch speed");
+    Near(BoostMath.LaunchSpeed(300, 254.75, 255, true), 300, "Unlocked boost ignores the ceiling");
+    Near(BoostMath.LaunchSpeed(300, 300, 255, true), 300, "Unlocked boost above the old ceiling remains unrestricted");
+}
+
+void TestSphericalBounds()
+{
+    // Validate the resulting position geometrically, independently of the rule's
+    // algebra. Large tangential speeds expose a flat-altitude clamp's weakness.
+    var random = new Random(734219);
+    foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
+    {
+        foreach (double radius in new[] { 200.0, 240.0, 254.999, 255.0 })
+        {
+            const double ceiling = 255;
+            double maxTangent = BoostMath.MaximumTangentSpeed(radius, ceiling, dt);
+            Check(double.IsFinite(maxTangent) && maxTangent >= 0, "Tangential limit must be finite and nonnegative.");
+            Near(Math.Sqrt(radius * radius + Math.Pow(maxTangent * dt, 2)), ceiling,
+                "Maximum tangent travel must end exactly on the spherical ceiling");
+
+            foreach (double requestedTangent in new[] { 0.0, 10.0, 300.0, 1e9 })
+            {
+                double tangent = Math.Min(requestedTangent, maxTangent);
+                double minRadial = BoostMath.MinimumRadialSpeed(radius, ceiling, tangent, dt);
+                double maxRadial = BoostMath.MaximumRadialSpeed(radius, ceiling, tangent, dt);
+                double endRadius = Math.Sqrt(Math.Pow(radius + maxRadial * dt, 2) + Math.Pow(tangent * dt, 2));
+                Near(endRadius, ceiling, "Maximum radial travel must end on the spherical ceiling");
+                Near(Math.Sqrt(Math.Pow(radius + minRadial * dt, 2) + Math.Pow(tangent * dt, 2)), ceiling,
+                    "Minimum radial travel must end on the opposite side of the spherical ceiling");
+                foreach (double requestedRadial in new[] { -1e9, -1000.0, -80.0, 0.0, 80.0, 300.0, 1e6 })
+                {
+                    double radial = Math.Clamp(requestedRadial, minRadial, maxRadial);
+                    double endpoint = Math.Sqrt(Math.Pow(radius + radial * dt, 2) + Math.Pow(tangent * dt, 2));
+                    Check(endpoint <= ceiling + tolerance, $"Endpoint escaped: r={radius}, vr={requestedRadial}, vt={requestedTangent}, dt={dt}.");
+                }
+            }
+        }
+
+        for (int i = 0; i < 1000; i++)
+        {
+            double ceiling = 50 + random.NextDouble() * 1000;
+            double radius = ceiling * (0.1 + random.NextDouble() * 0.9);
+            double tangent = Math.Min(random.NextDouble() * 1e6, BoostMath.MaximumTangentSpeed(radius, ceiling, dt));
+            double radial = Math.Clamp((random.NextDouble() - 0.5) * 2e8,
+                BoostMath.MinimumRadialSpeed(radius, ceiling, tangent, dt),
+                BoostMath.MaximumRadialSpeed(radius, ceiling, tangent, dt));
+            double endpoint = Math.Sqrt(Math.Pow(radius + radial * dt, 2) + Math.Pow(tangent * dt, 2));
+            Check(double.IsFinite(endpoint) && endpoint <= ceiling + tolerance, "Randomized spherical travel exceeded its ceiling.");
+        }
+    }
+}
+
+void Simulate(double dt, bool release, double initialTangential)
+{
+    const double ceiling = 255, ground = 201;
+    double x = ground, y = 0, vx = -100, vy = initialTangential;
+    bool sawLaunch = false, sawDescent = false;
+    for (int step = 0; step < 10000; step++)
+    {
+        double radius = Math.Sqrt(x * x + y * y);
+        double ux = x / radius, uy = y / radius;
+        double radial = vx * ux + vy * uy;
+        double tangent = vx * -uy + vy * ux;
+        bool boosting = !release || step < 30;
+        if (boosting)
+            radial = BoostMath.LaunchSpeed(80, radius, ceiling, false);
+        else
+            radial -= 9.8 * dt;
+        double tangentLimit = BoostMath.MaximumTangentSpeed(radius, ceiling, dt);
+        tangent = Math.Clamp(tangent, -tangentLimit, tangentLimit);
+        radial = Math.Clamp(radial, BoostMath.MinimumRadialSpeed(radius, ceiling, Math.Abs(tangent), dt),
+            BoostMath.MaximumRadialSpeed(radius, ceiling, Math.Abs(tangent), dt));
+        vx = ux * radial - uy * tangent;
+        vy = uy * radial + ux * tangent;
+        x += vx * dt;
+        y += vy * dt;
+        double endpoint = Math.Sqrt(x * x + y * y);
+        Check(double.IsFinite(endpoint) && endpoint <= ceiling + tolerance,
+            $"Simulation escaped at step={step}, dt={dt}, release={release}, initialTangent={initialTangential}.");
+        sawLaunch |= endpoint > ground + 1;
+        sawDescent |= !boosting && radial < -1;
+        if (endpoint < ground)
+        {
+            // Minimal ground collision model; no Unity/game behavior is claimed.
+            x *= ground / endpoint;
+            y *= ground / endpoint;
+            vx = vy = 0;
+        }
+    }
+    Check(sawLaunch, "Boost must overcome the initial falling velocity.");
+    if (release)
+        Check(sawDescent, "After release, inertia plus gravity must permit descent.");
+    simulations++;
+}
+
+void TestUnlockedEscape()
+{
+    foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
+    {
+        double radius = 201;
+        for (int i = 0; i < 60; i++)
+            radius += BoostMath.LaunchSpeed(300, radius, 255, true) * dt;
+        Check(radius > 255, "Unlocked 300 m/s launch must be able to leave the ceiling.");
+    }
+}
+
+TestHoldGesture();
+TestLaunchSpeed();
+TestSphericalBounds();
+foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
+    foreach (double tangent in new[] { 0.0, 30.0, 1e9 })
+    {
+        Simulate(dt, false, tangent);
+        Simulate(dt, true, tangent);
+    }
+TestUnlockedEscape();
+Console.WriteLine($"PASS: {assertions:N0} assertions; {simulations} simulations of 10,000 steps at 60/20/5 UPS.");
+Console.WriteLine("Coverage: hold/release/block/reset/clock rollback, locked deceleration, spherical radial+tangential bounds, coast/gravity, unlocked escape.");
