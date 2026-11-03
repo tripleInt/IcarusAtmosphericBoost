@@ -5,9 +5,11 @@ namespace IcarusAtmosphericBoost
     // Pure scalar calculations, shared with the executable regression checks.
     internal static class BoostMath
     {
-        internal static double LaunchSpeed(double requested, double radius, double ceiling, bool unlocked)
+        internal const float LaunchCeilingAltitude = 47f;
+
+        internal static double LaunchSpeed(double requested, double radius, double ceiling)
         {
-            return unlocked ? requested : Math.Min(requested, Math.Max(0.0, ceiling - radius) * 4.0);
+            return Math.Min(requested, Math.Max(0.0, ceiling - radius) * 4.0);
         }
 
         // |p + v*dt| <= ceiling, including the outward effect of tangential travel.

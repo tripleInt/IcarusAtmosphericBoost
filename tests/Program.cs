@@ -48,13 +48,11 @@ void TestHoldGesture()
 
 void TestLaunchSpeed()
 {
-    Near(BoostMath.LaunchSpeed(80, 201, 255, false), 80, "Low-altitude launch uses the configured speed");
-    Near(BoostMath.LaunchSpeed(80, 245, 255, false), 40, "Locked boost brakes with remaining altitude");
-    Near(BoostMath.LaunchSpeed(80, 254.75, 255, false), 1, "Locked boost slows near the ceiling");
-    Near(BoostMath.LaunchSpeed(80, 255, 255, false), 0, "The ceiling permits no outward boost");
-    Near(BoostMath.LaunchSpeed(80, 256, 255, false), 0, "Being above the ceiling must not create negative launch speed");
-    Near(BoostMath.LaunchSpeed(300, 254.75, 255, true), 300, "Unlocked boost ignores the ceiling");
-    Near(BoostMath.LaunchSpeed(300, 300, 255, true), 300, "Unlocked boost above the old ceiling remains unrestricted");
+    Near(BoostMath.LaunchSpeed(80, 201, 255), 80, "Low-altitude launch uses the configured speed");
+    Near(BoostMath.LaunchSpeed(80, 245, 255), 40, "Locked boost brakes with remaining altitude");
+    Near(BoostMath.LaunchSpeed(80, 254.75, 255), 1, "Locked boost slows near the ceiling");
+    Near(BoostMath.LaunchSpeed(80, 255, 255), 0, "The ceiling permits no outward boost");
+    Near(BoostMath.LaunchSpeed(80, 256, 255), 0, "Being above the ceiling must not create negative launch speed");
 }
 
 void TestSphericalBounds()
@@ -104,9 +102,9 @@ void TestSphericalBounds()
     }
 }
 
-void Simulate(double dt, bool release, double initialTangential)
+void Simulate(double dt, double requestedSpeed, double initialTangential)
 {
-    const double ceiling = 255, ground = 201;
+    const double ceiling = 200 + BoostMath.LaunchCeilingAltitude, ground = 201;
     double x = ground, y = 0, vx = -100, vy = initialTangential;
     bool sawLaunch = false, sawDescent = false;
     for (int step = 0; step < 10000; step++)
@@ -115,9 +113,9 @@ void Simulate(double dt, bool release, double initialTangential)
         double ux = x / radius, uy = y / radius;
         double radial = vx * ux + vy * uy;
         double tangent = vx * -uy + vy * ux;
-        bool boosting = !release || step < 30;
+        bool boosting = step == 0;
         if (boosting)
-            radial = BoostMath.LaunchSpeed(80, radius, ceiling, false);
+            radial = BoostMath.LaunchSpeed(requestedSpeed, radius, ceiling);
         else
             radial -= 9.8 * dt;
         double tangentLimit = BoostMath.MaximumTangentSpeed(radius, ceiling, dt);
@@ -130,7 +128,7 @@ void Simulate(double dt, bool release, double initialTangential)
         y += vy * dt;
         double endpoint = Math.Sqrt(x * x + y * y);
         Check(double.IsFinite(endpoint) && endpoint <= ceiling + tolerance,
-            $"Simulation escaped at step={step}, dt={dt}, release={release}, initialTangent={initialTangential}.");
+            $"Simulation escaped at step={step}, dt={dt}, speed={requestedSpeed}, initialTangent={initialTangential}.");
         sawLaunch |= endpoint > ground + 1;
         sawDescent |= !boosting && radial < -1;
         if (endpoint < ground)
@@ -142,20 +140,8 @@ void Simulate(double dt, bool release, double initialTangential)
         }
     }
     Check(sawLaunch, "Boost must overcome the initial falling velocity.");
-    if (release)
-        Check(sawDescent, "After release, inertia plus gravity must permit descent.");
+    Check(sawDescent, "A single impulse must allow descent even if the key stays held.");
     simulations++;
-}
-
-void TestUnlockedEscape()
-{
-    foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
-    {
-        double radius = 201;
-        for (int i = 0; i < 60; i++)
-            radius += BoostMath.LaunchSpeed(300, radius, 255, true) * dt;
-        Check(radius > 255, "Unlocked 300 m/s launch must be able to leave the ceiling.");
-    }
 }
 
 TestHoldGesture();
@@ -164,9 +150,9 @@ TestSphericalBounds();
 foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
     foreach (double tangent in new[] { 0.0, 30.0, 1e9 })
     {
-        Simulate(dt, false, tangent);
-        Simulate(dt, true, tangent);
+        Simulate(dt, 80, tangent);
+        Simulate(dt, 300, tangent);
     }
-TestUnlockedEscape();
+Check(BoostMath.LaunchCeilingAltitude < 49, "Launch ceiling must stay below vanilla sailing altitude.");
 Console.WriteLine($"PASS: {assertions:N0} assertions; {simulations} simulations of 10,000 steps at 60/20/5 UPS.");
-Console.WriteLine("Coverage: hold/release/block/reset/clock rollback, locked deceleration, spherical radial+tangential bounds, coast/gravity, unlocked escape.");
+Console.WriteLine("Coverage: hold/release/block/reset/clock rollback, near-ceiling deceleration, spherical radial+tangential bounds, coast/gravity, sailing altitude guard.");

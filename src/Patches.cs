@@ -6,7 +6,11 @@ namespace IcarusAtmosphericBoost
     internal static class ControllerTickPatch
     {
         [HarmonyPrefix]
-        private static void Prefix(PlayerController __instance) { BoostRuntime.Refresh(__instance); }
+        private static void Prefix(PlayerController __instance)
+        {
+            BoostRuntime.Refresh(__instance);
+            BoostRuntime.CorrectPosition(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(PlayerController), nameof(PlayerController.ApplyLocalForce))]
@@ -17,13 +21,6 @@ namespace IcarusAtmosphericBoost
         {
             BoostRuntime.BeforeForce(__instance, ref ____lForce, ref ___rigidbodySleep);
         }
-    }
-
-    [HarmonyPatch(typeof(PlayerMove_Sail), nameof(PlayerMove_Sail.GameTick))]
-    internal static class SailPatch
-    {
-        [HarmonyPrefix]
-        private static void Prefix(PlayerMove_Sail __instance) { BoostRuntime.BeforeSail(__instance.controller); }
     }
 
     [HarmonyPatch(typeof(PlayerController), nameof(PlayerController.UpdatePhysicsDirect))]

@@ -42,8 +42,7 @@ internal static class Program
                 { "PlayerController.GameTick", new[] { "System.Int64" } },
                 { "PlayerController.ApplyLocalForce", new string[0] },
                 { "PlayerController.UpdatePhysicsDirect", new string[0] },
-                { "PlayerController.Free", new string[0] },
-                { "PlayerMove_Sail.GameTick", new[] { "System.Int64" } }
+                { "PlayerController.Free", new string[0] }
             };
             var methods = new Dictionary<string, MethodInfo>();
             foreach (var target in expectedTargets)
@@ -99,7 +98,7 @@ internal static class Program
                     }
                 }
             }
-            Require(declaredTargets.SetEquals(expectedTargets.Keys), "All five expected targets are patched by the compiled mod");
+            Require(declaredTargets.SetEquals(expectedTargets.Keys), "All expected targets are patched by the compiled mod");
 
             Type plugin = mod.GetType("IcarusAtmosphericBoost.Plugin", true);
             Require(plugin.BaseType.FullName == "BepInEx.BaseUnityPlugin", "Plugin derives from BepInEx.BaseUnityPlugin");
@@ -107,7 +106,7 @@ internal static class Program
             Require(pluginAttributes.Any(a => a.AttributeType.FullName == "BepInEx.BepInPlugin"
                 && a.ConstructorArguments.Count == 3
                 && (string)a.ConstructorArguments[0].Value == "local.dsp.icarusatmosphericboost"
-                && (string)a.ConstructorArguments[2].Value == "1.1.0"), "BepInEx plugin identity and version metadata");
+                && (string)a.ConstructorArguments[2].Value == "1.2.0"), "BepInEx plugin identity and version metadata");
             Require(pluginAttributes.Any(a => a.AttributeType.FullName == "BepInEx.BepInProcess"
                 && a.ConstructorArguments.Count == 1
                 && (string)a.ConstructorArguments[0].Value == "DSPGAME.exe"), "BepInEx process filter is DSPGAME.exe");

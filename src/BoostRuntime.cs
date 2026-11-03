@@ -5,7 +5,7 @@ namespace IcarusAtmosphericBoost
 {
     internal static class BoostRuntime
     {
-        private const float SailStep = 1f / 60f;
+        private const float TickStep = 1f / 60f;
         private static readonly HoldGesture Gesture = new HoldGesture();
         private static PlayerController trackedController;
         private static PlanetData trackedPlanet;
@@ -54,66 +54,27 @@ namespace IcarusAtmosphericBoost
                 trackedPlanet = planet;
             }
             boosting = false;
-            if (!Plugin.Enabled.Value || !CanControl(c) || planet == null || !TryAtmosphere(planet, out float top, out float ceiling))
+            if (!Plugin.Enabled.Value || !CanControl(c) || planet == null || c.player.sailing)
             {
+                if (c != null && c.player.sailing)
+                    guarded = false;
                 Gesture.Reset();
                 return;
             }
 
-            Vector3 position = LocalPosition(c);
-            float radius = position.magnitude;
-            if (c.mecha.thrusterLevel >= 2)
-                guarded = false;
-            else if (radius < top)
-                guarded = true; // Remains armed after release and across UI interruptions.
-
+            float radius = c.player.position.magnitude;
             bool pressed = CanReadJump(c) && VFInput._jump.pressing;
             bool held = Gesture.Sample(pressed, Time.realtimeSinceStartupAsDouble, Plugin.HoldSeconds.Value);
-            boosting = held && radius > 1f && radius < top && !c.player.warping;
+            boosting = held && radius > 1f && radius < Ceiling(planet);
         }
 
-        private static bool TryAtmosphere(PlanetData planet, out float top, out float ceiling)
-        {
-            float height = planet.atmosphereHeight;
-            top = planet.realRadius + height;
-            ceiling = top - Mathf.Min(5f, height * 0.1f);
-            return height > 0.5f && !float.IsNaN(height) && !float.IsInfinity(height);
-        }
+        // Vanilla flight can enter Sail above 49 m. Leave room for physics rounding.
+        private static float Ceiling(PlanetData planet) => planet.realRadius + BoostMath.LaunchCeilingAltitude;
 
-        private static Vector3 LocalPosition(PlayerController c)
+        private static bool CanModify(PlayerController c)
         {
-            return c.player.sailing
-                ? (Vector3)Maths.QInvRotateLF(c.gameData.relativeRot, c.player.uPosition - c.gameData.relativePos)
-                : c.player.position;
-        }
-
-        private static Vector3 LocalVelocity(PlayerController c, Vector3 position)
-        {
-            if (!c.player.sailing)
-                return c.velocity;
-            VectorLF3 carrier = trackedPlanet.GetUniversalVelocityAtLocalPoint(GameMain.gameTime, position);
-            return (Vector3)Maths.QInvRotateLF(c.gameData.relativeRot, c.player.uVelocity - carrier);
-        }
-
-        private static void SetVelocity(PlayerController c, Vector3 position, Vector3 velocity)
-        {
-            c.velocity = velocity;
-            if (c.player.sailing)
-            {
-                c.player.uVelocity = Maths.QRotateLF(c.gameData.relativeRot, velocity)
-                    + trackedPlanet.GetUniversalVelocityAtLocalPoint(GameMain.gameTime, position);
-                c.actionSail.visual_uvel = Maths.QRotateLF(c.gameData.relativeRot, velocity);
-                // The original Sail action can request landing even while boost is active.
-                if (c.movementStateInFrame != EMovementState.Sail)
-                    c.velocityOnLanding = velocity;
-            }
-        }
-
-        private static bool CanModify(PlayerController c, out float ceiling)
-        {
-            ceiling = 0f;
-            return c == trackedController && Plugin.Enabled.Value && CanControl(c) && trackedPlanet != null
-                && trackedPlanet == c.gameData.localPlanet && TryAtmosphere(trackedPlanet, out _, out ceiling);
+            return c == trackedController && Plugin.Enabled.Value && CanControl(c) && !c.player.sailing
+                && trackedPlanet != null && trackedPlanet == c.gameData.localPlanet;
         }
 
         private static Vector3 LimitVelocity(Vector3 position, Vector3 velocity, float ceiling, float dt)
@@ -134,7 +95,7 @@ namespace IcarusAtmosphericBoost
         {
             Vector3 up = position.normalized;
             float requested = c.mecha.thrusterLevel >= 2 ? Plugin.LaunchSpeed.Value : Plugin.LockedLaunchSpeed.Value;
-            float speed = (float)BoostMath.LaunchSpeed(requested, position.magnitude, ceiling, c.mecha.thrusterLevel >= 2);
+            float speed = (float)BoostMath.LaunchSpeed(requested, position.magnitude, ceiling);
             return velocity + up * (speed - Vector3.Dot(velocity, up));
         }
 
@@ -156,102 +117,54 @@ namespace IcarusAtmosphericBoost
             return true;
         }
 
-        // Runs before Sail integrates uPosition so a falling Icarus reverses immediately.
-        internal static void BeforeSail(PlayerController c)
-        {
-            if (!c.player.sailing || !CanModify(c, out float ceiling))
-                return;
-            CorrectPosition(c);
-            Vector3 position = LocalPosition(c);
-            Vector3 velocity = LocalVelocity(c, position);
-            bool launched = boosting && TryPayForBoost(c);
-            if (launched)
-            {
-                Gesture.Consume();
-                velocity = BoostVelocity(c, position, velocity, ceiling);
-            }
-            boosting = false;
-            if (guarded && c.mecha.thrusterLevel < 2)
-                velocity = LimitVelocity(position, velocity, ceiling, SailStep);
-            if (launched || guarded)
-                SetVelocity(c, position, velocity);
-        }
-
-        // After every movement action, before Unity receives the accumulated force.
+        // After the vanilla movement actions, before Unity receives the accumulated force.
         internal static void BeforeForce(PlayerController c, ref VectorLF3 force, ref bool rigidbodySleep)
         {
-            if (!CanModify(c, out float ceiling))
+            if (!CanModify(c) || (!boosting && !guarded))
                 return;
-            CorrectPosition(c);
-            Vector3 position = LocalPosition(c);
-            if (position.sqrMagnitude < 1f)
+            Vector3 position = c.player.position;
+            float radius = position.magnitude;
+            if (radius < 1f)
                 return;
-            Vector3 velocity = LocalVelocity(c, position);
-            // Sail already applied its impulse before integrating movement.
-            if (boosting && !c.player.sailing)
-                boosting = TryPayForBoost(c);
-            if (boosting)
+
+            float ceiling = Ceiling(trackedPlanet);
+            Vector3 velocity = c.velocity;
+            if (boosting && c.movementStateInFrame != EMovementState.Sail && radius < ceiling && TryPayForBoost(c))
             {
                 Gesture.Consume();
                 velocity = BoostVelocity(c, position, velocity, ceiling);
-                force = VectorLF3.zero; // Fly otherwise overwrites the impulse with hover thrust.
+                force = VectorLF3.zero;
                 rigidbodySleep = false;
                 c.rigid.WakeUp();
-            }
-            if (guarded && c.mecha.thrusterLevel < 2)
-            {
-                float dt = c.player.sailing ? SailStep : Mathf.Max(SailStep, Time.fixedDeltaTime);
-                // AddForce is deferred. Include its impulse in the ceiling calculation.
-                Vector3 impulse = c.player.sailing ? Vector3.zero : (Vector3)force * Mathf.Clamp(Time.fixedDeltaTime, SailStep, 0.050000004f);
-                velocity = LimitVelocity(position, velocity + impulse, ceiling, dt) - impulse;
-                if (c.movementStateInFrame == EMovementState.Sail && !c.player.sailing)
-                    c.movementStateInFrame = c.player.movementState;
-            }
-            if (boosting || (guarded && c.mecha.thrusterLevel < 2))
-                SetVelocity(c, position, velocity);
-
-            if (boosting && !c.player.sailing && c.mecha.thrusterLevel >= 2)
-            {
-                float transitionRadius = trackedPlanet.realRadius + Mathf.Min(50f, (trackedPlanet.atmosphereHeight - 1f) * 0.5f);
-                if ((position + velocity * Mathf.Max(SailStep, Time.fixedDeltaTime)).magnitude >= transitionRadius)
-                    EnterSail(c);
+                guarded = true;
             }
             boosting = false;
+            if (!guarded)
+                return;
+
+            // Preserve vanilla forces during the coast, accounting for their deferred impulse.
+            float dt = Mathf.Max(TickStep, Time.fixedDeltaTime);
+            Vector3 impulse = (Vector3)force * Mathf.Clamp(Time.fixedDeltaTime, TickStep, 0.050000004f);
+            Vector3 nextVelocity = LimitVelocity(position, velocity + impulse, ceiling, dt);
+            c.velocity = nextVelocity - impulse;
+            if ((position + nextVelocity * dt).sqrMagnitude < position.sqrMagnitude)
+                guarded = false;
         }
 
-        private static void EnterSail(PlayerController c)
-        {
-            if (c.movementStateInFrame == EMovementState.Sail)
-                return; // Vanilla already performed the transition and notifications.
-            if (c.cmd.type == ECommand.Build)
-            {
-                c.cmd.SetNoneCommand();
-                c.actionBuild.blueprintMode = EBlueprintMode.None;
-            }
-            c.movementStateInFrame = EMovementState.Sail;
-            c.actionSail.ResetSailState();
-            GameCamera.instance?.SyncForSailMode();
-            GameMain.gameScenario?.NotifyOnSailModeEnter();
-        }
-
-        // Backstop for collisions, save loading, or vanilla Sail's direct integration.
-        // Runs before UpdatePhysicsDirect synchronizes local/universal coordinates.
         internal static void CorrectPosition(PlayerController c)
         {
-            if (!guarded || !CanModify(c, out float ceiling) || c.mecha.thrusterLevel >= 2)
+            if (!guarded || !CanModify(c))
                 return;
-            Vector3 position = LocalPosition(c);
+            Vector3 position = c.player.position;
             float radius = position.magnitude;
-            if (radius <= ceiling || radius < 1f)
+            float ceiling = Ceiling(trackedPlanet);
+            if (radius <= ceiling)
                 return;
-            position *= (ceiling - 0.01f) / radius;
-            Vector3 velocity = LocalVelocity(c, position);
-            velocity -= position.normalized * Mathf.Max(0f, Vector3.Dot(velocity, position.normalized));
-            if (c.player.sailing)
-                c.player.uPosition = c.gameData.relativePos + Maths.QRotateLF(c.gameData.relativeRot, position);
+            Vector3 up = position / radius;
+            position = up * (ceiling - 0.01f);
             c.player.position = position;
             c.rigid.position = position;
-            SetVelocity(c, position, velocity);
+            c.velocity -= up * Mathf.Max(0f, Vector3.Dot(c.velocity, up));
         }
     }
 }
