@@ -6,6 +6,12 @@ namespace IcarusAtmosphericBoost
     internal static class BoostMath
     {
         internal const float LaunchCeilingAltitude = 47f;
+        internal const float SailHandoffAltitude = 50f;
+
+        internal static bool ShouldHandoff(double altitude, double outwardSpeed)
+        {
+            return altitude >= SailHandoffAltitude && outwardSpeed > 0.0;
+        }
 
         internal static double LaunchSpeed(double requested, double radius, double ceiling)
         {

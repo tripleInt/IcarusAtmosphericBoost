@@ -11,7 +11,7 @@ namespace IcarusAtmosphericBoost
         private static PlanetData trackedPlanet;
         private static bool launchRequested;
         private static bool guarded;
-        private static double ascentUntil;
+        private static bool coasting;
         private static float outwardBeforeActions;
 
         internal static void Reset()
@@ -19,7 +19,7 @@ namespace IcarusAtmosphericBoost
             trackedController = null;
             trackedPlanet = null;
             launchRequested = guarded = false;
-            ascentUntil = 0.0;
+            coasting = false;
             Gesture.Reset();
         }
 
@@ -59,7 +59,7 @@ namespace IcarusAtmosphericBoost
             {
                 trackedPlanet = planet;
                 launchRequested = guarded = false;
-                ascentUntil = 0.0;
+                coasting = false;
                 Gesture.CancelHold();
             }
             if (!Plugin.Enabled.Value || !CanReadJump(c) || planet == null || c.player.warping)
@@ -96,7 +96,7 @@ namespace IcarusAtmosphericBoost
             Refresh(c);
             CorrectPosition(c);
             outwardBeforeActions = 0f;
-            if (CanModify(c) && !c.player.sailing && Time.realtimeSinceStartupAsDouble < ascentUntil)
+            if (CanModify(c) && !c.player.sailing && coasting)
                 outwardBeforeActions = Vector3.Dot(c.velocity, c.player.position.normalized);
         }
 
@@ -173,29 +173,31 @@ namespace IcarusAtmosphericBoost
                 float speed = unlocked ? Plugin.LaunchSpeed.Value
                     : (float)BoostMath.LaunchSpeed(Plugin.LockedLaunchSpeed.Value, radius, ceiling);
                 velocity += up * (speed - Vector3.Dot(velocity, up));
-                force = VectorLF3.zero;
+                force = c.localGravity;
                 rigidbodySleep = false;
                 c.rigid.WakeUp();
                 guarded = !unlocked;
-                if (unlocked)
-                    ascentUntil = now + 2.0;
+                coasting = unlocked;
             }
 
             if (unlocked && (launched || outwardBeforeActions > 0f))
             {
-                // Carry the impulse through the initial ballistic ascent.
-                // Use the live Rigidbody velocity before vanilla's 50 m/s Fly cap.
-                float radial = Vector3.Dot(velocity, up);
-                if (!launched && radial < outwardBeforeActions)
-                    velocity += up * (outwardBeforeActions - radial);
+                // The sampled speed already includes gravity from the previous physics step.
+                // Discard vanilla hover control, then let this step apply gravity once.
+                if (!launched)
+                    velocity += up * (outwardBeforeActions - Vector3.Dot(velocity, up));
+                force = c.localGravity;
                 rigidbodySleep = false;
                 c.velocity = velocity;
                 if (launched)
                     PlayIgnition(c);
+                if (c.movementStateInFrame == EMovementState.Sail
+                    || BoostMath.ShouldHandoff(radius - trackedPlanet.realRadius, Vector3.Dot(velocity, up)))
+                    HandoffToSail(c);
                 return;
             }
 
-            ascentUntil = 0.0;
+            coasting = false;
             if (!guarded)
                 return;
 
@@ -242,6 +244,24 @@ namespace IcarusAtmosphericBoost
             BeginSailCoast(c.actionSail);
             Gesture.RecordLaunch(Time.realtimeSinceStartupAsDouble);
             PlayIgnition(c);
+        }
+
+        private static void HandoffToSail(PlayerController c)
+        {
+            coasting = false;
+            if (c.movementStateInFrame != EMovementState.Sail)
+            {
+                if (c.cmd.type == ECommand.Build)
+                {
+                    c.cmd.SetNoneCommand();
+                    c.actionBuild.blueprintMode = EBlueprintMode.None;
+                }
+                c.movementStateInFrame = EMovementState.Sail;
+                c.actionSail.ResetSailState();
+                GameCamera.instance?.SyncForSailMode();
+                GameMain.gameScenario?.NotifyOnSailModeEnter();
+            }
+            BeginSailCoast(c.actionSail);
         }
 
         private static void PlayIgnition(PlayerController c)

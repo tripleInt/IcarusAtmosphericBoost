@@ -143,6 +143,10 @@ void Simulate(double dt, double requestedSpeed, double initialTangential)
 
 TestHoldGesture();
 TestLaunchSpeed();
+Check(!BoostMath.ShouldHandoff(0, 300), "A surface launch must stay in local flight.");
+Check(!BoostMath.ShouldHandoff(49.99, 1000), "High speed alone must not switch to sailing.");
+Check(BoostMath.ShouldHandoff(50, 100), "An outward launch crossing the departure altitude must hand off.");
+Check(!BoostMath.ShouldHandoff(70, -10), "Falling near the planet must not trigger a handoff.");
 TestSphericalBounds();
 foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
     foreach (double tangent in new[] { 0.0, 30.0, 1e9 })

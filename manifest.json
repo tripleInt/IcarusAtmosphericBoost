@@ -1,6 +1,6 @@
 {
   "name": "IcarusAtmosphericBoost",
-  "version_number": "2.1.1",
+  "version_number": "2.1.2",
   "website_url": "https://github.com/tripleInt/IcarusAtmosphericBoost",
   "description": "Hold and release jump near a planet for a launch. Drive Engine 2 unlocks an unrestricted ascent. Three-second cooldown.",
   "dependencies": [

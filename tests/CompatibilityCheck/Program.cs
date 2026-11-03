@@ -112,7 +112,7 @@ internal static class Program
             Require(pluginAttributes.Any(a => a.AttributeType.FullName == "BepInEx.BepInPlugin"
                 && a.ConstructorArguments.Count == 3
                 && (string)a.ConstructorArguments[0].Value == "local.dsp.icarusatmosphericboost"
-                && (string)a.ConstructorArguments[2].Value == "2.1.1"), "BepInEx plugin identity and version metadata");
+                && (string)a.ConstructorArguments[2].Value == "2.1.2"), "BepInEx plugin identity and version metadata");
             Require(pluginAttributes.Any(a => a.AttributeType.FullName == "BepInEx.BepInProcess"
                 && a.ConstructorArguments.Count == 1
                 && (string)a.ConstructorArguments[0].Value == "DSPGAME.exe"), "BepInEx process filter is DSPGAME.exe");
