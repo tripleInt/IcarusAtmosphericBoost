@@ -1,8 +1,8 @@
 {
   "name": "IcarusAtmosphericBoost",
-  "version_number": "1.2.0",
+  "version_number": "2.1.0",
   "website_url": "https://github.com/tripleInt/IcarusAtmosphericBoost",
-  "description": "Hold jump for a single upward launch, with configurable hold time and energy cost. Works on airless planets and keeps the launch below sailing altitude.",
+  "description": "Hold and release jump near a planet for a launch. Unlock Drive Engine 2 to launch into sailing. Three-second cooldown.",
   "dependencies": [
     "xiaoye97-BepInEx-5.4.17"
   ]

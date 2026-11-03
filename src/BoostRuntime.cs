@@ -9,14 +9,17 @@ namespace IcarusAtmosphericBoost
         private static readonly HoldGesture Gesture = new HoldGesture();
         private static PlayerController trackedController;
         private static PlanetData trackedPlanet;
-        private static bool boosting;
+        private static bool launchRequested;
         private static bool guarded;
+        private static double ascentUntil;
+        private static float outwardBeforeActions;
 
         internal static void Reset()
         {
             trackedController = null;
             trackedPlanet = null;
-            boosting = guarded = false;
+            launchRequested = guarded = false;
+            ascentUntil = 0.0;
             Gesture.Reset();
         }
 
@@ -47,25 +50,27 @@ namespace IcarusAtmosphericBoost
             if (c != null && !IsLocal(c))
                 return;
             PlanetData planet = IsLocal(c) ? c.gameData.localPlanet : null;
-            if (c != trackedController || planet != trackedPlanet)
+            if (c != trackedController)
             {
                 Reset();
                 trackedController = c;
-                trackedPlanet = planet;
             }
-            boosting = false;
-            if (!Plugin.Enabled.Value || !CanControl(c) || planet == null || c.player.sailing)
+            if (planet != trackedPlanet)
             {
-                if (c != null && c.player.sailing)
-                    guarded = false;
-                Gesture.Reset();
+                trackedPlanet = planet;
+                launchRequested = guarded = false;
+                ascentUntil = 0.0;
+                Gesture.CancelHold();
+            }
+            if (!Plugin.Enabled.Value || !CanReadJump(c) || planet == null || c.player.warping)
+            {
+                launchRequested = false;
+                Gesture.CancelHold();
                 return;
             }
 
-            float radius = c.player.position.magnitude;
-            bool pressed = CanReadJump(c) && VFInput._jump.pressing;
-            bool held = Gesture.Sample(pressed, Time.realtimeSinceStartupAsDouble, Plugin.HoldSeconds.Value);
-            boosting = held && radius > 1f && radius < Ceiling(planet);
+            if (Gesture.Sample(VFInput._jump.pressing, Time.realtimeSinceStartupAsDouble, Plugin.HoldSeconds.Value))
+                launchRequested = InLaunchRange(c);
         }
 
         // Vanilla flight can enter Sail above 49 m. Leave room for physics rounding.
@@ -73,8 +78,26 @@ namespace IcarusAtmosphericBoost
 
         private static bool CanModify(PlayerController c)
         {
-            return c == trackedController && Plugin.Enabled.Value && CanControl(c) && !c.player.sailing
+            return c == trackedController && Plugin.Enabled.Value && CanControl(c)
                 && trackedPlanet != null && trackedPlanet == c.gameData.localPlanet;
+        }
+
+        private static bool InLaunchRange(PlayerController c)
+        {
+            double radius = c.player.sailing
+                ? (c.player.uPosition - trackedPlanet.uPosition).magnitude
+                : c.player.position.magnitude;
+            return radius > 1.0 && radius - trackedPlanet.realRadius <= Plugin.LaunchRange.Value
+                && (c.mecha.thrusterLevel >= 2 || (!c.player.sailing && radius < Ceiling(trackedPlanet)));
+        }
+
+        internal static void BeginTick(PlayerController c)
+        {
+            Refresh(c);
+            CorrectPosition(c);
+            outwardBeforeActions = 0f;
+            if (CanModify(c) && !c.player.sailing && Time.realtimeSinceStartupAsDouble < ascentUntil)
+                outwardBeforeActions = Vector3.Dot(c.velocity, c.player.position.normalized);
         }
 
         private static Vector3 LimitVelocity(Vector3 position, Vector3 velocity, float ceiling, float dt)
@@ -89,14 +112,6 @@ namespace IcarusAtmosphericBoost
             double maxRadial = BoostMath.MaximumRadialSpeed(radius, ceiling, tangent.magnitude, dt);
             double minRadial = BoostMath.MinimumRadialSpeed(radius, ceiling, tangent.magnitude, dt);
             return tangent + up * (float)Math.Max(minRadial, Math.Min(radial, maxRadial));
-        }
-
-        private static Vector3 BoostVelocity(PlayerController c, Vector3 position, Vector3 velocity, float ceiling)
-        {
-            Vector3 up = position.normalized;
-            float requested = c.mecha.thrusterLevel >= 2 ? Plugin.LaunchSpeed.Value : Plugin.LockedLaunchSpeed.Value;
-            float speed = (float)BoostMath.LaunchSpeed(requested, position.magnitude, ceiling);
-            return velocity + up * (speed - Vector3.Dot(velocity, up));
         }
 
         private static bool TryPayForBoost(PlayerController c)
@@ -120,25 +135,58 @@ namespace IcarusAtmosphericBoost
         // After the vanilla movement actions, before Unity receives the accumulated force.
         internal static void BeforeForce(PlayerController c, ref VectorLF3 force, ref bool rigidbodySleep)
         {
-            if (!CanModify(c) || (!boosting && !guarded))
+            if (!CanModify(c) || c.player.sailing)
                 return;
+            bool unlocked = c.mecha.thrusterLevel >= 2;
+            if (unlocked)
+                guarded = false;
             Vector3 position = c.player.position;
             float radius = position.magnitude;
+            bool requested = launchRequested;
+            launchRequested = false;
             if (radius < 1f)
                 return;
 
             float ceiling = Ceiling(trackedPlanet);
             Vector3 velocity = c.velocity;
-            if (boosting && c.movementStateInFrame != EMovementState.Sail && radius < ceiling && TryPayForBoost(c))
+            Vector3 up = position / radius;
+            bool launched = requested && InLaunchRange(c) && TryPayForBoost(c);
+            if (launched)
             {
-                Gesture.Consume();
-                velocity = BoostVelocity(c, position, velocity, ceiling);
+                double now = Time.realtimeSinceStartupAsDouble;
+                Gesture.RecordLaunch(now);
+                float speed = unlocked ? Plugin.LaunchSpeed.Value
+                    : (float)BoostMath.LaunchSpeed(Plugin.LockedLaunchSpeed.Value, radius, ceiling);
+                velocity += up * (speed - Vector3.Dot(velocity, up));
                 force = VectorLF3.zero;
                 rigidbodySleep = false;
                 c.rigid.WakeUp();
-                guarded = true;
+                guarded = !unlocked;
+                if (unlocked)
+                    ascentUntil = now + 2.0;
             }
-            boosting = false;
+
+            if (unlocked && (launched || outwardBeforeActions > 0f))
+            {
+                // Carry the impulse through the near-ground approach to Sail.
+                // Use the live Rigidbody velocity before vanilla's 50 m/s Fly cap.
+                float radial = Vector3.Dot(velocity, up);
+                if (!launched && radial < outwardBeforeActions)
+                    velocity += up * (outwardBeforeActions - radial);
+                rigidbodySleep = false;
+                c.velocity = velocity;
+                if (launched)
+                    PlayIgnition(c);
+                float safeAltitude = trackedPlanet.type == EPlanetType.Gas ? 49f : 8f;
+                if (radius - trackedPlanet.realRadius >= safeAltitude || c.movementStateInFrame == EMovementState.Sail)
+                {
+                    EnterSail(c);
+                    ascentUntil = 0.0;
+                }
+                return;
+            }
+
+            ascentUntil = 0.0;
             if (!guarded)
                 return;
 
@@ -147,13 +195,15 @@ namespace IcarusAtmosphericBoost
             Vector3 impulse = (Vector3)force * Mathf.Clamp(Time.fixedDeltaTime, TickStep, 0.050000004f);
             Vector3 nextVelocity = LimitVelocity(position, velocity + impulse, ceiling, dt);
             c.velocity = nextVelocity - impulse;
+            if (launched)
+                PlayIgnition(c);
             if ((position + nextVelocity * dt).sqrMagnitude < position.sqrMagnitude)
                 guarded = false;
         }
 
         internal static void CorrectPosition(PlayerController c)
         {
-            if (!guarded || !CanModify(c))
+            if (!guarded || !CanModify(c) || c.player.sailing || c.mecha.thrusterLevel >= 2)
                 return;
             Vector3 position = c.player.position;
             float radius = position.magnitude;
@@ -165,6 +215,51 @@ namespace IcarusAtmosphericBoost
             c.player.position = position;
             c.rigid.position = position;
             c.velocity -= up * Mathf.Max(0f, Vector3.Dot(c.velocity, up));
+        }
+
+        internal static void BeforeSail(PlayerController c)
+        {
+            if (!launchRequested || !CanModify(c) || !c.player.sailing)
+                return;
+            launchRequested = false;
+            if (!InLaunchRange(c) || !TryPayForBoost(c))
+                return;
+            VectorLF3 offset = c.player.uPosition - trackedPlanet.uPosition;
+            VectorLF3 up = offset.normalized;
+            VectorLF3 local = Maths.QInvRotateLF(trackedPlanet.runtimeRotation, offset);
+            VectorLF3 carrier = trackedPlanet.GetUniversalVelocityAtLocalPoint(GameMain.gameTime, local);
+            double radial = VectorLF3.Dot(c.player.uVelocity - carrier, up);
+            c.player.uVelocity += up * (Plugin.LaunchSpeed.Value - radial);
+            Gesture.RecordLaunch(Time.realtimeSinceStartupAsDouble);
+            PlayIgnition(c);
+        }
+
+        private static void PlayIgnition(PlayerController c)
+        {
+            PlayerEffect effect = c.player.effect;
+            if (effect == null || effect.backEngineEffect == null)
+                return;
+            foreach (ParticleSystem thruster in effect.backEngineEffect)
+            {
+                if (thruster != null && thruster.gameObject.activeInHierarchy)
+                    thruster.Emit(12);
+            }
+        }
+
+        private static void EnterSail(PlayerController c)
+        {
+            if (c.movementStateInFrame != EMovementState.Sail)
+            {
+                if (c.cmd.type == ECommand.Build)
+                {
+                    c.cmd.SetNoneCommand();
+                    c.actionBuild.blueprintMode = EBlueprintMode.None;
+                }
+                c.movementStateInFrame = EMovementState.Sail;
+                c.actionSail.ResetSailState();
+                GameCamera.instance?.SyncForSailMode();
+                GameMain.gameScenario?.NotifyOnSailModeEnter();
+            }
         }
     }
 }

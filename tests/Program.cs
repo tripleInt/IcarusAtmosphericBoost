@@ -23,27 +23,24 @@ void TestHoldGesture()
 {
     const double delay = 0.5;
     var hold = new HoldGesture();
-    Check(!hold.Sample(true, 10, delay), "A new press must wait for the hold delay.");
-    Check(!hold.Sample(true, 10.49, delay), "A short press must not trigger.");
-    Check(hold.Sample(true, 10.5, delay), "Holding through the threshold must trigger.");
-    hold.Consume();
-    Check(!hold.Sample(true, 11, delay), "Holding after a launch must not launch again.");
-    Check(!hold.Sample(true, 120, delay), "Even a very long hold cannot repeat the launch.");
-    Check(!hold.Sample(false, 11.1, delay), "Release must rearm the gesture.");
-    Check(!hold.Sample(true, 11.2, delay), "A second press must start a new hold.");
-    Check(!hold.Sample(false, 11.69, delay), "Releasing just before the delay must cancel.");
-    Check(!hold.Sample(true, 11.7, delay), "Separate short presses must not accumulate.");
-
-    // The runtime passes pressed=false when input is blocked by a menu or focus.
-    Check(!hold.Sample(false, 12, delay), "Blocked input must reset the pending hold.");
-    Check(!hold.Sample(true, 20, delay), "Returning from blocked input must wait again.");
-    Check(!hold.Sample(true, 20.49, delay), "Time spent blocked must not count as hold time.");
-    Check(hold.Sample(true, 20.5, delay), "A complete hold after blocking must trigger.");
-    hold.Reset();
-    Check(!hold.Sample(true, 20.6, delay), "An explicit lifecycle reset must clear activation.");
-    Check(!hold.Sample(true, 19, delay), "A clock earlier than press start must restart timing.");
-    Check(!hold.Sample(true, 19.49, delay), "Clock rollback must not leave the gesture active.");
-    Check(hold.Sample(true, 19.5, delay), "Timing must recover after a clock rollback.");
+    Check(!hold.Sample(true, 10, delay), "Pressing starts the hold.");
+    Check(!hold.Sample(false, 10.49, delay), "A short release cannot launch.");
+    Check(!hold.Sample(true, 11, delay), "A second press starts a new hold.");
+    Check(!hold.Sample(true, 12, delay), "Holding beyond the threshold cannot launch.");
+    Check(hold.Sample(false, 12, delay), "Releasing after the threshold requests one launch.");
+    Check(!hold.Sample(false, 12, delay), "Sampling the same release twice cannot launch again.");
+    hold.RecordLaunch(12);
+    Check(!hold.Sample(true, 13, delay), "A press during cooldown starts timing.");
+    Check(!hold.Sample(false, 14.99, delay), "Release before cooldown expires is discarded.");
+    Check(!hold.Sample(false, 15, delay), "Cooldown expiration cannot replay a discarded release.");
+    Check(!hold.Sample(true, 15, delay), "Press after cooldown starts a new hold.");
+    Check(hold.Sample(false, 15.5, delay), "Release after cooldown and hold threshold can launch.");
+    Check(!hold.Sample(true, 16, delay), "Press before UI opens.");
+    hold.CancelHold();
+    Check(!hold.Sample(false, 17, delay), "Release after UI cancellation cannot launch.");
+    Check(!hold.Sample(true, 20, delay), "Press before clock rollback.");
+    Check(!hold.Sample(true, 19, delay), "Clock rollback restarts timing.");
+    Check(!hold.Sample(false, 19.49, delay), "Rollback cannot arm a premature release.");
 }
 
 void TestLaunchSpeed()
@@ -155,4 +152,4 @@ foreach (double dt in new[] { 1.0 / 60, 1.0 / 20, 1.0 / 5 })
     }
 Check(BoostMath.LaunchCeilingAltitude < 49, "Launch ceiling must stay below vanilla sailing altitude.");
 Console.WriteLine($"PASS: {assertions:N0} assertions; {simulations} simulations of 10,000 steps at 60/20/5 UPS.");
-Console.WriteLine("Coverage: hold/release/block/reset/clock rollback, near-ceiling deceleration, spherical radial+tangential bounds, coast/gravity, sailing altitude guard.");
+Console.WriteLine("Coverage: release trigger/cooldown/block/clock rollback, near-ceiling deceleration, spherical radial+tangential bounds, coast/gravity, sailing altitude guard.");

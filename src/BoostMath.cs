@@ -35,27 +35,31 @@ namespace IcarusAtmosphericBoost
 
     internal sealed class HoldGesture
     {
+        internal const double CooldownSeconds = 3.0;
         private double startedAt = double.NaN;
-        private bool consumed;
+        private double nextLaunchAt = double.NegativeInfinity;
 
         internal bool Sample(bool pressed, double now, double delay)
         {
-            if (!pressed)
+            if (pressed)
             {
-                Reset();
+                if (double.IsNaN(startedAt) || now < startedAt)
+                    startedAt = now;
                 return false;
             }
-            if (double.IsNaN(startedAt) || now < startedAt)
-                startedAt = now;
-            return !consumed && now - startedAt >= delay;
+            bool ready = now - startedAt >= delay && now >= nextLaunchAt;
+            CancelHold();
+            return ready;
         }
 
-        internal void Consume() { consumed = true; }
+        internal void RecordLaunch(double now) { nextLaunchAt = now + CooldownSeconds; }
+
+        internal void CancelHold() { startedAt = double.NaN; }
 
         internal void Reset()
         {
-            startedAt = double.NaN;
-            consumed = false;
+            CancelHold();
+            nextLaunchAt = double.NegativeInfinity;
         }
     }
 }
