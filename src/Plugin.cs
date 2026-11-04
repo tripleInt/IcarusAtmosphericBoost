@@ -11,12 +11,12 @@ namespace IcarusAtmosphericBoost
     {
         public const string PluginGuid = "local.dsp.icarusatmosphericboost";
         public const string PluginName = "Icarus Atmospheric Boost";
-        public const string PluginVersion = "2.1.2";
+        public const string PluginVersion = "2.2.0";
 
         internal static ConfigEntry<bool> Enabled;
-        internal static ConfigEntry<float> HoldSeconds;
-        internal static ConfigEntry<float> LaunchSpeed;
-        internal static ConfigEntry<float> LockedLaunchSpeed;
+        internal static ConfigEntry<float> ChargeSecondsPerLayer;
+        internal static ConfigEntry<float> SpeedPerLayer;
+        internal static ConfigEntry<bool> ShowTips;
         internal static ConfigEntry<float> BoostPowerMultiplier;
         internal static ConfigEntry<float> LaunchRange;
         private Harmony harmony;
@@ -24,14 +24,13 @@ namespace IcarusAtmosphericBoost
         private void Awake()
         {
             Enabled = Config.Bind("General", "Enabled", true, "Enable atmospheric boost.");
-            HoldSeconds = Config.Bind("General", "HoldSeconds", 0.8f,
-                new ConfigDescription("Minimum time to hold jump before releasing to launch.", new AcceptableValueRange<float>(0.1f, 2f)));
+            ChargeSecondsPerLayer = Config.Bind("General", "ChargeSecondsPerLayer", 0.75f,
+                new ConfigDescription("Real seconds per charge layer. Maximum layers equal researched Drive Engine level.", new AcceptableValueRange<float>(0.25f, 3f)));
+            SpeedPerLayer = Config.Bind("General", "SpeedPerLayer", 75f,
+                new ConfigDescription("Outward launch speed per completed layer in m/s. Existing faster outward momentum is preserved.", new AcceptableValueRange<float>(10f, 150f)));
+            ShowTips = Config.Bind("General", "ShowTips", true, "Show charge layers and cancellation above Icarus using vanilla floating tips.");
             LaunchRange = Config.Bind("General", "LaunchRange", 300f,
                 new ConfigDescription("Maximum height in metres above the planet surface reference radius at release.", new AcceptableValueRange<float>(50f, 400f)));
-            LaunchSpeed = Config.Bind("General", "LaunchSpeed", 300f,
-                new ConfigDescription("Outward speed in m/s after interstellar sailing is unlocked.", new AcceptableValueRange<float>(20f, 1000f)));
-            LockedLaunchSpeed = Config.Bind("General", "LockedLaunchSpeed", 80f,
-                new ConfigDescription("Maximum outward speed before sailing is unlocked. Capped below vanilla sailing altitude.", new AcceptableValueRange<float>(10f, 300f)));
             BoostPowerMultiplier = Config.Bind("General", "BoostPowerMultiplier", 2f,
                 new ConfigDescription("Energy per launch in seconds of vanilla low-altitude hovering. Zero disables the extra cost.", new AcceptableValueRange<float>(0f, 20f)));
             harmony = new Harmony(PluginGuid);

@@ -1,67 +1,82 @@
-# Icarus Atmospheric Boost / 伊卡洛斯大气弹射
+# Icarus Atmospheric Boost / 伊卡洛斯弹射起步
 
-用于《戴森球计划》的 BepInEx 5 + Harmony mod。
+用于《戴森球计划》的 BepInEx 5 + Harmony mod。按住跳跃键积累层数，松开后瞬间获得对应的向上初速度。
 
 ## 使用
 
-- 长按跳跃键至少 **0.8 秒**，松开时弹射一次。默认使用空格，跟随游戏的跳跃改键。
-- 成功弹射后有 **3 秒冷却**。冷却期间松键会取消本次请求，冷却结束后可再次长按并松键。
-- 默认在距行星基准表面 **300 米**内可以弹射。有无大气层均适用。下坠时会将径向速度转为向上，保留横向速度。
-- **驱动引擎 2 解锁前**：目标初速度为 80 m/s，实际速度随剩余空间调整。弹射从 47 米以下触发，上升段保持在原版起航高度以下。
-- **驱动引擎 2 解锁后**：默认向上初速度为 300 m/s，上升速度随原版重力变化。实际升至距行星基准表面 50 米且仍在向外飞时，切入原版航行。已经在近地航行时也可以触发弹射。
-- 蓄力时暂停跳跃键带来的原版持续爬升。松键成功弹射时扣一次能量，默认等于原版低空悬停 **2 秒**的耗能，最多扣核心容量的 5%。扣费会保留至少 5% 的核心能量，余额不足时取消弹射。
-- 成功弹射时，伊卡洛斯背部引擎会喷发一次原版火焰粒子。
-- 暂停、全屏界面、文本输入、失焦、死亡和开场引导期间不触发。建造或蓝图模式遵循原版机甲移动限制。
+- 默认每按住跳跃键 **0.75 秒**获得一层，每层增加 **75 m/s** 的弹射目标初速度。跟随游戏的跳跃改键，默认空格。
+- 最大蓄力层数等于**已经完成研究的驱动引擎等级**。驱动引擎 1 最多一层，驱动引擎 2 最多两层，后续升级依次增加。尚未解锁驱动引擎 1 时保留原版跳跃。
+- 松键立即按已完成层数弹射。未满一层时松键不会弹射，未完成的下一层不计入速度。蓄满后继续按住不会自动发射。
+- 按下任一移动方向键会清空本次蓄力。默认 WASD，也支持游戏改键。检测每个按键本身，即使抵住障碍物或同时按下相反方向也会打断。下坠、滑行和惯性位移不会打断。
+- 打断后必须松开跳跃键，再重新按住蓄力。
+- 每完成一层，伊卡洛斯头顶弹出层数和速度提示，例如 `蓄力 2/3 · 150 m/s`。满层时提示松键。已有完整层数时打断会提示 `蓄力已打断`，不足一层时静默取消。
+- 成功弹射后有 **3 秒冷却**。冷却期间不积累层数，持续按住时从冷却结束后开始计时。
 
-## 安装
+| 已完成层数 | 蓄力时间（默认） | 目标向上初速度 |
+| --- | --- | --- |
+| 1 | 0.75 秒 | 75 m/s |
+| 2 | 1.50 秒 | 150 m/s |
+| 3 | 2.25 秒 | 225 m/s |
+| 4 | 3.00 秒 | 300 m/s |
+| 5 | 3.75 秒 | 375 m/s |
+| 6 | 4.50 秒 | 450 m/s |
 
-1. 游戏或所用 mod 管理器配置中需已安装 **BepInEx 5**（可使用 DSP 的 `xiaoye97-BepInEx` 包）。
-2. 从 [GitHub Releases](https://github.com/tripleInt/IcarusAtmosphericBoost/releases) 下载 ZIP。关闭游戏，将包内的 DLL 放到该配置的 `BepInEx/plugins/IcarusAtmosphericBoost/` 中。
-3. 用该 BepInEx 配置启动游戏。日志应出现 `Icarus Atmospheric Boost 2.1.2 loaded`。
+## 飞行与耗能
 
-使用 r2modman 时请复制到实际启动的 profile 的 `BepInEx/plugins`，不一定是游戏安装目录。
+默认在距行星基准表面 **300 米**内可以开始蓄力和释放，有无大气层均适用。弹射方向为背离行星中心，适用于地面、低空飞行、下坠和近地航行。保留横向速度，解锁航行后已有更快的向外速度也会保留。
 
-首次运行生成 `BepInEx/config/local.dsp.icarusatmosphericboost.cfg`：
+松键时一次性赋予初速度，同时喷发一次原版背部引擎火焰粒子。之后速度受原版重力影响。玩家通过提前松键选择较低层数，也可以蓄满后高速起飞。
+
+- **驱动引擎 2 解锁前**，弹射从 47 米以下触发，实际初速度和上升过程受剩余高度约束，保持在原版起航高度以下。提示中的速度是层数对应的目标值。
+- **驱动引擎 2 解锁后**，实际升至距行星基准表面 50 米且仍向外运动时，保留当前速度交接到航行模式。起飞后没有 mod 额外施加的高度刹车。
+- 蓄力期间屏蔽跳跃键带来的原版持续爬升，原版低空悬停仍正常耗能。
+- 成功释放时只扣一次额外能量，默认等于原版低空悬停 **2 秒**的耗能。每次最多扣核心容量的 5%，并保留至少 5% 的核心能量。层数提示、取消蓄力和保持满层均不额外扣费。
+- 能量不足时提示并取消本次弹射。暂停、全屏界面、文本输入、失焦、死亡、开场引导或离开触发范围会取消蓄力，恢复后需重新按键。
+
+## 安装与更新
+
+1. 游戏或 mod 管理器配置需安装 **BepInEx 5**，可使用 DSP 的 `xiaoye97-BepInEx` 包。
+2. 从 [GitHub Releases](https://github.com/tripleInt/IcarusAtmosphericBoost/releases) 下载 ZIP。关闭游戏，将 DLL 放到所用配置的 `BepInEx/plugins/IcarusAtmosphericBoost/` 中，替换旧版 DLL。
+3. 用该配置启动游戏。日志应出现 `Icarus Atmospheric Boost 2.2.0 loaded`。
+
+使用 r2modman 时，文件需放入实际启动的 profile。卸载时移除 DLL，mod 不添加自定义存档字段。
+
+首次运行生成 `BepInEx/config/local.dsp.icarusatmosphericboost.cfg`。
 
 | 配置 | 默认 | 含义 |
 | --- | --- | --- |
 | `Enabled` | `true` | 启用 mod |
-| `HoldSeconds` | `0.8` | 松键触发所需的最短按住时间（真实秒），允许 0.1–2 |
-| `LaunchSpeed` | `300` | 驱动引擎 2 解锁后的径向初速度，允许 20–1000 m/s |
-| `LaunchRange` | `300` | 最大触发高度，按行星基准表面计，允许 50–400 米 |
-| `LockedLaunchSpeed` | `80` | 解锁之前的目标初速度，允许 10–300 m/s，实际速度受起航高度限制 |
-| `BoostPowerMultiplier` | `2` | 单次弹射相当于几秒低空悬停耗能，允许 0–20，设为 0 关闭额外耗能 |
+| `ChargeSecondsPerLayer` | `0.75` | 每层蓄力时间，真实秒，允许 0.25–3 |
+| `SpeedPerLayer` | `75` | 每层对应的向上初速度，允许 10–150 m/s |
+| `ShowTips` | `true` | 显示头顶蓄力、打断和能量不足提示 |
+| `LaunchRange` | `300` | 可蓄力和释放的最大高度，允许 50–400 米 |
+| `BoostPowerMultiplier` | `2` | 单次弹射相当于几秒低空悬停耗能，允许 0–20，0 关闭额外扣费 |
 
-旧配置会保留已保存的长按时间。如仍为 0.35 秒，可手动改为 0.8 秒。修改配置后重启游戏。卸载时移除 DLL；mod 不添加自定义存档字段。
+2.2.0 使用新的分层配置。旧版 `HoldSeconds`、`LaunchSpeed` 和 `LockedLaunchSpeed` 不再参与计算，无需手动删除旧配置即可获得新的默认蓄力规则。其他已有配置继续保留，修改后重启游戏。
 
-## 编译
+## 编译与检查
 
-构建 SDK 为 **.NET 10**；插件运行目标为游戏 Unity/Mono 支持的 **.NET Framework 4.7.2**。
+构建 SDK 为 **.NET 10**，插件运行目标为游戏 Unity/Mono 支持的 **.NET Framework 4.7.2**。需要相应引用程序集。
 
-在仓库根目录运行。将变量设为自己的游戏安装目录和含有 `core` 子目录的 BepInEx 目录。
+在仓库根目录运行，将变量设为自己的游戏安装目录和含有 `core` 子目录的 BepInEx 目录。
 
 ```powershell
 .\build.ps1 -GameDirectory $GameDirectory -BepInExDirectory $BepInExDirectory
-```
 
-构建需要 .NET Framework 4.7.2 引用程序集。DLL 和 Thunderstore ZIP 输出到仓库的 `dist/` 目录。
-
-## 验证范围
-
-已通过编译、输入计时与球面速度约束的回归检查，以及 Harmony/BepInEx 静态兼容性检查。
-
-```powershell
 dotnet run --project .\tests\RegressionChecks.csproj --configuration Release
+dotnet run --project .\tests\RuntimeChecks\RuntimeChecks.csproj --configuration Release
 dotnet build .\tests\CompatibilityCheck\CompatibilityCheck.csproj --configuration Release
 .\tests\CompatibilityCheck\bin\Release\net472\CompatibilityCheck.exe $GameDirectory $BepInExDirectory
 ```
 
-回归检查覆盖长按松键触发、重复采样、3 秒冷却、输入取消，以及不同物理步长下的球面速度约束。
+DLL 和 Thunderstore ZIP 输出到仓库的 `dist/` 目录。ZIP 根目录包含 `manifest.json`、`README.md`、`CHANGELOG.md`、`icon.png` 和许可证。
 
-尚未进行游戏内运行验证。可在有大气和无大气的星球分别验证地面起步、下坠反向弹射、冷却，以及驱动引擎 2 解锁前后的航行表现。
+自动检查覆盖分层计时、重复采样、方向打断、科技上限、3 秒冷却、单次扣费、松键立即赋速、重力滑行、航行交接以及不同物理步长下的高度保护。运行逻辑测试使用简化的游戏宿主替身，不运行 Unity。
 
-## 实现说明
+**尚未完成本版本的游戏内实测。** 头顶提示排布、粒子效果、实际碰撞和相机过渡仍需在游戏中验证。
 
-弹射在松键后施加一次背离行星中心的速度。驱动引擎 2 解锁前，上升段限制在行星半径加 47 米的球面内。解锁后，离地阶段保留每个物理步受重力更新后的径向速度。达到起航高度后，交接时把当前速度同步到原版航行。航行的近星修正会逐渐恢复。
+## 参考
 
-项目结构参考了 [DSP-StationAssistant](https://github.com/cat-yummi-dspmod/DSP-StationAssistant) 的 BepInEx/Harmony 构建方式；此插件独立运行，不依赖 CatAPI 或 StationAssistant。
+构建方式参考 [DSP-StationAssistant](https://github.com/cat-yummi-dspmod/DSP-StationAssistant)。头顶浮动提示的使用方式参考 [DSP-Deproliferation 的 Feedback.cs](https://github.com/cat-yummi-dspmod/DSP-Deproliferation/blob/main/Feedback.cs)，使用游戏原生 `UIRealtimeTip` 并支持中英文。
+
+本插件独立运行，不依赖上述 mod 或 CatAPI。MIT 许可证见 `LICENSE`。

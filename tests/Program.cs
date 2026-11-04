@@ -21,26 +21,56 @@ void Near(double actual, double expected, string reason)
 
 void TestHoldGesture()
 {
-    const double delay = 0.5;
+    const double delay = 0.75;
     var hold = new HoldGesture();
-    Check(!hold.Sample(true, 10, delay), "Pressing starts the hold.");
-    Check(!hold.Sample(false, 10.49, delay), "A short release cannot launch.");
-    Check(!hold.Sample(true, 11, delay), "A second press starts a new hold.");
-    Check(!hold.Sample(true, 12, delay), "Holding beyond the threshold cannot launch.");
-    Check(hold.Sample(false, 12, delay), "Releasing after the threshold requests one launch.");
-    Check(!hold.Sample(false, 12, delay), "Sampling the same release twice cannot launch again.");
-    hold.RecordLaunch(12);
-    Check(!hold.Sample(true, 13, delay), "A press during cooldown starts timing.");
-    Check(!hold.Sample(false, 14.99, delay), "Release before cooldown expires is discarded.");
-    Check(!hold.Sample(false, 15, delay), "Cooldown expiration cannot replay a discarded release.");
-    Check(!hold.Sample(true, 15, delay), "Press after cooldown starts a new hold.");
-    Check(hold.Sample(false, 15.5, delay), "Release after cooldown and hold threshold can launch.");
-    Check(!hold.Sample(true, 16, delay), "Press before UI opens.");
-    hold.CancelHold();
-    Check(!hold.Sample(false, 17, delay), "Release after UI cancellation cannot launch.");
-    Check(!hold.Sample(true, 20, delay), "Press before clock rollback.");
-    Check(!hold.Sample(true, 19, delay), "Clock rollback restarts timing.");
-    Check(!hold.Sample(false, 19.49, delay), "Rollback cannot arm a premature release.");
+    ChargeSample Sample(bool pressed, double now, bool direction = false, int max = 3)
+        => hold.Sample(pressed, direction, now, delay, max);
+    Check(Sample(true, 10).ReleasedLayers == 0, "Pressing never launches.");
+    Check(Sample(false, 10.749).ReleasedLayers == 0, "A partial layer cannot launch.");
+    Sample(true, 11);
+    Check(Sample(true, 11.75).AddedLayers == 1 && hold.Layers == 1, "One layer per 0.75 seconds.");
+    Check(Sample(true, 11.75).AddedLayers == 0, "Update and physics cannot duplicate a popup.");
+    Check(Sample(true, 12.5).AddedLayers == 1 && hold.Layers == 2, "Second layer boundary.");
+    Check(Sample(true, 30).AddedLayers == 1 && hold.Layers == 3, "Holding indefinitely stops at tech cap.");
+    Check(Sample(false, 30).ReleasedLayers == 3, "Release carries all completed layers.");
+    Check(Sample(false, 30).ReleasedLayers == 0, "Release is consumed once.");
+    hold.RecordLaunch(30);
+    Sample(true, 31);
+    Check(!hold.IsCharging, "Cooldown does not collect layers or popups.");
+    Check(Sample(false, 32.99).ReleasedLayers == 0, "Cooldown release is discarded.");
+    Sample(true, 33);
+    Check(Sample(false, 33.75).ReleasedLayers == 1, "Exact cooldown boundary permits a new charge.");
+    Sample(true, 34);
+    Check(Sample(true, 34.2, true).CancelledLayers == 0, "Partial-layer interruption stays silent.");
+    Sample(true, 40);
+    Check(!hold.IsCharging, "Keeping jump held after directional interruption cannot restart charging.");
+    Check(Sample(false, 40).ReleasedLayers == 0, "Interrupted release cannot launch.");
+    Sample(true, 41);
+    Sample(true, 42.5);
+    Check(Sample(true, 42.6, true).CancelledLayers == 2, "Interrupt reports completed layers once.");
+    Check(Sample(true, 42.6, true).CancelledLayers == 0, "Held direction cannot spam cancellation.");
+    Sample(false, 43);
+    Sample(true, 44);
+    Check(Sample(false, 45.5).ReleasedLayers == 2, "Release counts layers reached between samples.");
+    Sample(true, 46);
+    Sample(true, 47);
+    Check(Sample(false, 47, true).ReleasedLayers == 0, "Direction wins over simultaneous release.");
+    Sample(true, 48);
+    hold.Interrupt(true);
+    Sample(true, 50);
+    Check(!hold.IsCharging, "UI cancellation requires release too.");
+    Sample(false, 50);
+    Sample(true, 60);
+    Sample(true, 59);
+    Check(Sample(false, 59.74).ReleasedLayers == 0, "Clock rollback cannot arm an early release.");
+    Sample(true, 61, max: 0);
+    Check(Sample(false, 70, max: 0).ReleasedLayers == 0, "No researched drive means no layers.");
+    for (int max = 1; max <= 20; max++)
+    {
+        hold.Reset();
+        Sample(true, 0, max: max);
+        Check(Sample(false, 100, max: max).ReleasedLayers == max, "Each drive level adds one maximum layer.");
+    }
 }
 
 void TestLaunchSpeed()

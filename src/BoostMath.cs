@@ -44,28 +44,60 @@ namespace IcarusAtmosphericBoost
         internal const double CooldownSeconds = 3.0;
         private double startedAt = double.NaN;
         private double nextLaunchAt = double.NegativeInfinity;
+        private bool blockedUntilRelease;
+        internal int Layers { get; private set; }
+        internal bool IsCharging => !double.IsNaN(startedAt) && !blockedUntilRelease;
 
-        internal bool Sample(bool pressed, double now, double delay)
+        internal ChargeSample Sample(bool pressed, bool directionPressed, double now, double secondsPerLayer, int maxLayers)
         {
-            if (pressed)
+            if (directionPressed || maxLayers <= 0)
+                return new ChargeSample(0, 0, Interrupt(pressed));
+            if (blockedUntilRelease)
             {
-                if (double.IsNaN(startedAt) || now < startedAt)
-                    startedAt = now;
-                return false;
+                if (!pressed) blockedUntilRelease = false;
+                return default;
             }
-            bool ready = now - startedAt >= delay && now >= nextLaunchAt;
+            if (double.IsNaN(startedAt))
+            {
+                if (!pressed || now < nextLaunchAt) return default;
+                startedAt = now;
+            }
+            if (now < startedAt) startedAt = now;
+            int previous = Layers;
+            Layers = (int)Math.Min(maxLayers, Math.Floor(Math.Max(0, now - startedAt) / secondsPerLayer));
+            int added = Math.Max(0, Layers - previous);
+            if (pressed)
+                return new ChargeSample(added, 0, 0);
+            int released = Layers;
             CancelHold();
-            return ready;
+            return new ChargeSample(added, released, 0);
         }
 
         internal void RecordLaunch(double now) { nextLaunchAt = now + CooldownSeconds; }
 
-        internal void CancelHold() { startedAt = double.NaN; }
+        internal int Interrupt(bool pressed)
+        {
+            int cancelled = Layers;
+            CancelHold();
+            blockedUntilRelease = pressed;
+            return cancelled;
+        }
+
+        internal void CancelHold() { startedAt = double.NaN; Layers = 0; }
 
         internal void Reset()
         {
             CancelHold();
+            blockedUntilRelease = false;
             nextLaunchAt = double.NegativeInfinity;
         }
     }
+
+    internal readonly struct ChargeSample
+    {
+        internal readonly int AddedLayers, ReleasedLayers, CancelledLayers;
+        internal ChargeSample(int added, int released, int cancelled)
+        { AddedLayers = added; ReleasedLayers = released; CancelledLayers = cancelled; }
+    }
+
 }

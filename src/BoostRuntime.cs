@@ -9,16 +9,21 @@ namespace IcarusAtmosphericBoost
         private static readonly HoldGesture Gesture = new HoldGesture();
         private static PlayerController trackedController;
         private static PlanetData trackedPlanet;
-        private static bool launchRequested;
+        private static int requestedLayers;
+        private static int maxLayers;
+        private static double nextLevelCheck;
         private static bool guarded;
         private static bool coasting;
         private static float outwardBeforeActions;
+        private static Vector3 velocityBeforeActions;
 
         internal static void Reset()
         {
             trackedController = null;
             trackedPlanet = null;
-            launchRequested = guarded = false;
+            requestedLayers = maxLayers = 0;
+            nextLevelCheck = 0;
+            guarded = false;
             coasting = false;
             Gesture.Reset();
         }
@@ -58,19 +63,53 @@ namespace IcarusAtmosphericBoost
             if (planet != trackedPlanet)
             {
                 trackedPlanet = planet;
-                launchRequested = guarded = false;
+                requestedLayers = 0;
+                guarded = false;
                 coasting = false;
-                Gesture.CancelHold();
+                Gesture.Interrupt(VFInput._jump.pressing);
             }
             if (!Plugin.Enabled.Value || !CanReadJump(c) || planet == null || c.player.warping)
             {
-                launchRequested = false;
-                Gesture.CancelHold();
+                requestedLayers = 0;
+                Gesture.Interrupt(VFInput._jump.pressing);
+                if (!Plugin.Enabled.Value || (c != null && (!c.player.isAlive || c.player.warping)))
+                    coasting = guarded = false;
                 return;
             }
 
-            if (Gesture.Sample(VFInput._jump.pressing, Time.realtimeSinceStartupAsDouble, Plugin.HoldSeconds.Value))
-                launchRequested = InLaunchRange(c);
+            double now = Time.realtimeSinceStartupAsDouble;
+            if (now >= nextLevelCheck)
+            {
+                maxLayers = DriveLevels.Read(c);
+                nextLevelCheck = now + 0.5;
+            }
+            if (!InLaunchRange(c))
+            {
+                if (Gesture.Interrupt(VFInput._jump.pressing) > 0) BoostFeedback.Cancel(c);
+                requestedLayers = 0;
+                return;
+            }
+            bool direction = DirectionPressed();
+            if (direction && requestedLayers > 0)
+            {
+                requestedLayers = 0;
+                BoostFeedback.Cancel(c);
+            }
+            ChargeSample sample = Gesture.Sample(VFInput._jump.pressing, direction, now,
+                Plugin.ChargeSecondsPerLayer.Value, maxLayers);
+            int lastLayer = sample.ReleasedLayers > 0 ? sample.ReleasedLayers : Gesture.Layers;
+            for (int layer = lastLayer - sample.AddedLayers + 1; layer <= lastLayer; layer++)
+                BoostFeedback.Layer(c, layer, maxLayers);
+            if (sample.CancelledLayers > 0) BoostFeedback.Cancel(c);
+            if (sample.ReleasedLayers > 0) requestedLayers = sample.ReleasedLayers;
+        }
+
+        private static bool DirectionPressed()
+        {
+            // Check the four input actions separately, even if opposing keys cancel
+            // each other's axis or the player is physically unable to move.
+            return VFInput._moveForward.pressing || VFInput._moveBackward.pressing
+                || VFInput._moveLeft.pressing || VFInput._moveRight.pressing;
         }
 
         // Vanilla flight can enter Sail above 49 m. Leave room for physics rounding.
@@ -96,20 +135,23 @@ namespace IcarusAtmosphericBoost
             Refresh(c);
             CorrectPosition(c);
             outwardBeforeActions = 0f;
-            if (CanModify(c) && !c.player.sailing && coasting)
-                outwardBeforeActions = Vector3.Dot(c.velocity, c.player.position.normalized);
+            if (CanModify(c) && !c.player.sailing)
+            {
+                velocityBeforeActions = c.velocity;
+                outwardBeforeActions = Vector3.Dot(velocityBeforeActions, c.player.position.normalized);
+            }
         }
 
         internal static void SeparateChargeFromClimb(PlayerController c)
         {
             if (CanModify(c) && CanReadJump(c) && !c.player.warping
-                && VFInput._jump.pressing && InLaunchRange(c) && c.input1.y > 0f)
+                && Gesture.IsCharging && VFInput._jump.pressing && c.input1.y > 0f)
                 c.input1.y = 0f;
         }
 
         internal static void PreserveTakeoffCoast(PlayerController c, ref float force)
         {
-            if (CanModify(c) && c.mecha.thrusterLevel >= 2 && outwardBeforeActions > 0f)
+            if (CanModify(c) && (coasting || requestedLayers > 0))
                 force = 0f;
         }
 
@@ -157,47 +199,55 @@ namespace IcarusAtmosphericBoost
                 guarded = false;
             Vector3 position = c.player.position;
             float radius = position.magnitude;
-            bool requested = launchRequested;
-            launchRequested = false;
+            int layers = requestedLayers;
+            requestedLayers = 0;
             if (radius < 1f)
                 return;
 
             float ceiling = Ceiling(trackedPlanet);
             Vector3 velocity = c.velocity;
             Vector3 up = position / radius;
-            bool launched = requested && InLaunchRange(c) && TryPayForBoost(c);
+            bool launched = layers > 0 && InLaunchRange(c) && TryPayForBoost(c);
+            if (layers > 0 && !launched) BoostFeedback.NoEnergy(c);
             if (launched)
             {
-                double now = Time.realtimeSinceStartupAsDouble;
-                Gesture.RecordLaunch(now);
-                float speed = unlocked ? Plugin.LaunchSpeed.Value
-                    : (float)BoostMath.LaunchSpeed(Plugin.LockedLaunchSpeed.Value, radius, ceiling);
+                Gesture.RecordLaunch(Time.realtimeSinceStartupAsDouble);
+                velocity = velocityBeforeActions;
+                float speed = unlocked ? Mathf.Max(outwardBeforeActions, layers * Plugin.SpeedPerLayer.Value)
+                    : (float)BoostMath.LaunchSpeed(layers * Plugin.SpeedPerLayer.Value, radius, ceiling);
                 velocity += up * (speed - Vector3.Dot(velocity, up));
-                force = c.localGravity;
-                rigidbodySleep = false;
                 c.rigid.WakeUp();
                 guarded = !unlocked;
-                coasting = unlocked;
+                coasting = true;
+                if (c.movementStateInFrame < EMovementState.Fly) c.actionWalk.SwitchToFly();
+                PlayIgnition(c);
             }
 
-            if (unlocked && (launched || outwardBeforeActions > 0f))
+            if (coasting && (launched || outwardBeforeActions > 0f))
             {
-                // The sampled speed already includes gravity from the previous physics step.
-                // Discard vanilla hover control, then let this step apply gravity once.
+                // Initial velocity is assigned once, on release. Subsequent steps
+                // preserve the physics result and apply native gravity once.
                 if (!launched)
+                {
+                    if (!DirectionPressed()) velocity = velocityBeforeActions;
                     velocity += up * (outwardBeforeActions - Vector3.Dot(velocity, up));
+                }
                 force = c.localGravity;
                 rigidbodySleep = false;
-                c.velocity = velocity;
-                if (launched)
-                    PlayIgnition(c);
-                if (c.movementStateInFrame == EMovementState.Sail
-                    || BoostMath.ShouldHandoff(radius - trackedPlanet.realRadius, Vector3.Dot(velocity, up)))
-                    HandoffToSail(c);
-                return;
+                c.velocityOnLanding = Vector3.zero;
+                if (unlocked)
+                {
+                    c.velocity = velocity;
+                    if (c.movementStateInFrame == EMovementState.Sail
+                        || BoostMath.ShouldHandoff(radius - trackedPlanet.realRadius, Vector3.Dot(velocity, up)))
+                        HandoffToSail(c);
+                    return;
+                }
+                float radial = Vector3.Dot(velocity, up);
+                float safeSpeed = (float)BoostMath.LaunchSpeed(Math.Max(0f, radial), radius, ceiling);
+                if (radial > safeSpeed) velocity -= up * (radial - safeSpeed);
             }
-
-            coasting = false;
+            else coasting = false;
             if (!guarded)
                 return;
 
@@ -206,8 +256,6 @@ namespace IcarusAtmosphericBoost
             Vector3 impulse = (Vector3)force * Mathf.Clamp(Time.fixedDeltaTime, TickStep, 0.050000004f);
             Vector3 nextVelocity = LimitVelocity(position, velocity + impulse, ceiling, dt);
             c.velocity = nextVelocity - impulse;
-            if (launched)
-                PlayIgnition(c);
             if ((position + nextVelocity * dt).sqrMagnitude < position.sqrMagnitude)
                 guarded = false;
         }
@@ -230,20 +278,25 @@ namespace IcarusAtmosphericBoost
 
         internal static void BeforeSail(PlayerController c)
         {
-            if (!launchRequested || !CanModify(c) || !c.player.sailing)
+            if (!CanModify(c) || !c.player.sailing || c.player.warping)
                 return;
-            launchRequested = false;
-            if (!InLaunchRange(c) || !TryPayForBoost(c))
-                return;
-            VectorLF3 offset = c.player.uPosition - trackedPlanet.uPosition;
-            VectorLF3 up = offset.normalized;
-            VectorLF3 local = Maths.QInvRotateLF(trackedPlanet.runtimeRotation, offset);
-            VectorLF3 carrier = trackedPlanet.GetUniversalVelocityAtLocalPoint(GameMain.gameTime, local);
-            double radial = VectorLF3.Dot(c.player.uVelocity - carrier, up);
-            c.player.uVelocity += up * (Plugin.LaunchSpeed.Value - radial);
-            BeginSailCoast(c.actionSail);
-            Gesture.RecordLaunch(Time.realtimeSinceStartupAsDouble);
-            PlayIgnition(c);
+            int layers = requestedLayers;
+            requestedLayers = 0;
+            if (layers > 0 && InLaunchRange(c))
+            {
+                if (TryPayForBoost(c))
+                {
+                    VectorLF3 offset = c.player.uPosition - trackedPlanet.uPosition;
+                    VectorLF3 local = Maths.QInvRotateLF(trackedPlanet.runtimeRotation, offset);
+                    VectorLF3 carrier = trackedPlanet.GetUniversalVelocityAtLocalPoint(GameMain.gameTime, local);
+                    double radial = VectorLF3.Dot(c.player.uVelocity - carrier, offset.normalized);
+                    c.player.uVelocity += offset.normalized * Math.Max(0, layers * Plugin.SpeedPerLayer.Value - radial);
+                    BeginSailCoast(c.actionSail);
+                    Gesture.RecordLaunch(Time.realtimeSinceStartupAsDouble);
+                    PlayIgnition(c);
+                }
+                else BoostFeedback.NoEnergy(c);
+            }
         }
 
         private static void HandoffToSail(PlayerController c)

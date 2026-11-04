@@ -1,8 +1,8 @@
 {
   "name": "IcarusAtmosphericBoost",
-  "version_number": "2.1.2",
+  "version_number": "2.2.0",
   "website_url": "https://github.com/tripleInt/IcarusAtmosphericBoost",
-  "description": "Hold and release jump near a planet for a launch. Drive Engine 2 unlocks an unrestricted ascent. Three-second cooldown.",
+  "description": "Charge jump in layers, then release to launch. 75 m/s per layer, capped by Drive Engine level. Direction keys cancel. Floating charge tips.",
   "dependencies": [
     "xiaoye97-BepInEx-5.4.17"
   ]
